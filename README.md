@@ -54,8 +54,10 @@ pytest --cov
 Os testes rodam em SQLite em memória por padrão. Para rodar contra o PostgreSQL:
 
 ```bash
-TEST_DATABASE_URL=postgresql+psycopg://resolveai:resolveai@localhost:5432/resolveai_test pytest
+TEST_DATABASE_URL=postgresql+psycopg://resolveai:resolveai@127.0.0.1:5432/resolveai_test pytest
 ```
+
+> **Windows:** use `127.0.0.1` e não `localhost` nas URLs do banco. O `localhost` resolve primeiro para o IPv6 (`::1`), onde o repasse de portas do WSL pode aceitar a conexão sem encaminhá-la, e a conexão trava.
 
 ## Estrutura do backend
 

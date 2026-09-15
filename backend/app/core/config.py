@@ -13,7 +13,11 @@ class Settings(BaseSettings):
     environment: str = "development"
     log_level: str = "INFO"
 
-    database_url: str = "postgresql+psycopg://resolveai:resolveai@localhost:5432/resolveai"
+    # 127.0.0.1 instead of localhost: on Windows, localhost resolves to ::1 first, where the
+    # WSL port relay can accept the connection without forwarding it and hang forever.
+    database_url: str = (
+        "postgresql+psycopg://resolveai:resolveai@127.0.0.1:5432/resolveai?connect_timeout=10"
+    )
 
     jwt_secret_key: str = DEV_JWT_SECRET
     jwt_algorithm: str = "HS256"
