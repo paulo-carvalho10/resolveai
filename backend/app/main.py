@@ -1,7 +1,16 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import auth, categories, knowledge, priority_rules, teams, tickets, users
+from app.api import (
+    analytics,
+    auth,
+    categories,
+    knowledge,
+    priority_rules,
+    teams,
+    tickets,
+    users,
+)
 from app.core.config import get_settings
 from app.core.errors import register_exception_handlers
 from app.core.logger import RequestLoggingMiddleware, configure_logging
@@ -29,7 +38,7 @@ def create_app() -> FastAPI:
     app.add_middleware(RequestLoggingMiddleware)
     register_exception_handlers(app)
 
-    for module in (auth, users, teams, categories, priority_rules, knowledge, tickets):
+    for module in (auth, users, teams, categories, priority_rules, knowledge, tickets, analytics):
         app.include_router(module.router)
 
     @app.get("/health", tags=["health"])

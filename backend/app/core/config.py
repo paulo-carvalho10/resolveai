@@ -27,6 +27,21 @@ class Settings(BaseSettings):
     refresh_token_expire_days: int = 7
 
     cors_origins: list[str] = ["http://localhost:5173"]
+    # Business timezone: "resolved today" and daily charts follow the customer's calendar.
+    timezone: str = "America/Sao_Paulo"
+
+    # --- SLA (resolution targets per priority, in hours) ---
+    sla_hours_low: float = 24
+    sla_hours_medium: float = 8
+    sla_hours_high: float = 4
+    sla_hours_critical: float = 1
+    # A ticket is "at risk" when less than this share of its SLA window is left.
+    sla_at_risk_ratio: float = Field(0.25, gt=0, lt=1)
+
+    # --- Dashboard estimates ---
+    # Minutes a person would spend on work the automation did. Shown as an estimate.
+    minutes_saved_per_applied_triage: float = 3
+    minutes_saved_per_answered_suggestion: float = 5
 
     # --- AI triage ---
     # "keyword" runs a local, free classifier (tests, demos). "claude" calls the Anthropic API.

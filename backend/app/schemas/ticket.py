@@ -1,11 +1,12 @@
 from datetime import date, datetime
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, computed_field
 
 from app.models.enums import TicketEventType, TicketPriority, TicketStatus
 from app.schemas.common import NamedRef, ORMModel, PageParams
 from app.schemas.user import UserSummary
+from app.services import sla
 
 Title = Annotated[str, StringConstraints(strip_whitespace=True, min_length=5, max_length=200)]
 Description = Annotated[
@@ -71,6 +72,16 @@ class TicketRead(ORMModel):
     ai_confidence: float | None
     ai_summary: str | None
     ai_analyzed_at: datetime | None
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def sla_due_at(self) -> datetime:
+        return sla.due_at(self.priority, self.created_at)
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def sla_status(self) -> sla.SlaStatus:
+        return sla.status(self.priority, self.status, self.created_at, self.resolved_at)
 
 
 class TicketFilters(PageParams):

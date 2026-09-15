@@ -1,0 +1,100 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+
+  /* Neutrals carry the interface; colour is reserved for state and data. */
+  --color-surface: #ffffff;
+  --color-surface-muted: #f6f7f9;
+  --color-surface-raised: #ffffff;
+  --color-border: #e4e7ec;
+  --color-text: #101828;
+  --color-text-muted: #667085;
+  --color-brand: #4338ca;
+  --color-brand-contrast: #ffffff;
+  --color-brand-soft: #eef2ff;
+
+  /* Ticket state */
+  --color-state-open: #2563eb;
+  --color-state-progress: #7c3aed;
+  --color-state-waiting: #b45309;
+  --color-state-done: #047857;
+  --color-state-danger: #b42318;
+  --color-state-neutral: #667085;
+}
+
+.dark {
+  --color-surface: #0b0d12;
+  --color-surface-muted: #12141a;
+  --color-surface-raised: #171a21;
+  --color-border: #262a33;
+  --color-text: #e8eaed;
+  --color-text-muted: #98a2b3;
+  --color-brand: #818cf8;
+  --color-brand-contrast: #0b0d12;
+  --color-brand-soft: #1e1b4b;
+
+  --color-state-open: #60a5fa;
+  --color-state-progress: #c4b5fd;
+  --color-state-waiting: #fbbf24;
+  --color-state-done: #34d399;
+  --color-state-danger: #fda29b;
+  --color-state-neutral: #98a2b3;
+}
+
+@layer base {
+  html {
+    color-scheme: light;
+  }
+
+  html:has(.dark),
+  html.dark {
+    color-scheme: dark;
+  }
+
+  body {
+    @apply bg-surface-muted text-text antialiased;
+    font-family: var(--font-sans);
+  }
+
+  :focus-visible {
+    @apply outline-2 outline-offset-2 outline-brand;
+  }
+}
+
+@layer components {
+  .card {
+    @apply rounded-xl border border-border bg-surface-raised;
+  }
+
+  .input {
+    @apply w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text
+      placeholder:text-text-muted focus:border-brand focus:outline-none;
+  }
+
+  .label {
+    @apply mb-1.5 block text-sm font-medium text-text;
+  }
+
+  /* Tailwind v4 cannot @apply a custom class, so each variant lists its own utilities. */
+  .btn-primary,
+  .btn-secondary,
+  .btn-ghost {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-3.5 py-2 text-sm
+      font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-60;
+  }
+
+  .btn-primary {
+    @apply bg-brand text-brand-contrast hover:opacity-90;
+  }
+
+  .btn-secondary {
+    @apply border border-border bg-surface text-text hover:bg-surface-muted;
+  }
+
+  .btn-ghost {
+    @apply text-text-muted hover:bg-surface-muted hover:text-text;
+  }
+}

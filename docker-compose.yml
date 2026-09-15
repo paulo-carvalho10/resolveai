@@ -32,5 +32,13 @@ services:
       db:
         condition: service_healthy
 
+  web:
+    build: ./frontend
+    # nginx serves the built app and forwards /api to the api service.
+    ports:
+      - "5173:80"
+    depends_on:
+      - api
+
 volumes:
   pgdata:

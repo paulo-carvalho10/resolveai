@@ -16,6 +16,8 @@ ignore = ["B008"]
 [tool.ruff.lint.per-file-ignores]
 # Demo article prose: wrapping it would change the stored text.
 "app/scripts/seed_knowledge.py" = ["E501"]
+# Name lists read better as text than as 20-item literals.
+"app/scripts/demo_data.py" = ["SIM905"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

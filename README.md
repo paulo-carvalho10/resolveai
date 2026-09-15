@@ -1,182 +1,271 @@
 # ResolveAI
 
-AI-powered service desk that automatically classifies, prioritizes and routes support tickets while generating context-aware solutions using RAG.
+**Service desk com inteligência artificial**: recebe chamados, classifica, define prioridade, encaminha para a equipe certa e sugere a solução com base na base de conhecimento, citando as fontes.
 
-> 🚧 Em desenvolvimento. **Etapas 1, 2 e 3 concluídas:** backend base, triagem automática com IA e base de conhecimento com RAG (sugestões de solução com fontes).
+> AI-powered service desk that automatically classifies, prioritizes and routes support tickets while generating context-aware solutions using RAG.
 
-## Stack
+Projeto full stack completo: API em **Python/FastAPI** com **PostgreSQL + pgvector**, frontend em **React + TypeScript**, IA com **Claude** e busca semântica com **embeddings + RAG**. Roda inteiro com `docker compose up`.
 
-Python 3.13 · FastAPI · Pydantic · SQLAlchemy 2 · Alembic · PostgreSQL + pgvector · JWT + Argon2 · Claude (Anthropic SDK) · Voyage AI (embeddings) · Pytest · Docker
+![Dashboard](docs/screenshots/dashboard.png)
 
-## Rodando localmente
+## Índice
 
-Pré-requisitos: Python 3.13+ e Docker Desktop.
+[Demonstração](#demonstração) · [Funcionalidades](#funcionalidades) · [Como a IA funciona](#como-a-ia-funciona) · [Base de conhecimento e RAG](#base-de-conhecimento-e-rag) · [Arquitetura](#arquitetura) · [Stack](#stack) · [Instalação](#instalação) · [Variáveis de ambiente](#variáveis-de-ambiente) · [Testes](#testes) · [API](#api) · [Roadmap](#roadmap)
 
-```bash
-# 1. Banco de dados
-docker compose up -d db
+## Demonstração
 
-# 2. Backend
-cd backend
-python -m venv .venv
-.venv\Scripts\activate          # Linux/macOS: source .venv/bin/activate
-pip install -r requirements-dev.txt
-copy .env.example .env          # Linux/macOS: cp .env.example .env
-
-alembic upgrade head
-python -m app.scripts.seed
-uvicorn app.main:app --reload
-```
-
-API em http://localhost:8000 e documentação interativa em http://localhost:8000/docs.
-
-Logins criados pelo seed (senha `resolveai123`):
-
-| Papel | E-mail |
+| Chamados | Detalhe do chamado |
 | --- | --- |
-| Administrador | admin@resolveai.dev |
-| Atendente | agent@resolveai.dev |
-| Solicitante | user@resolveai.dev |
+| ![Lista de chamados](docs/screenshots/chamados.png) | ![Detalhe do chamado](docs/screenshots/chamado-detalhe.png) |
 
-### Tudo via Docker
+| Base de conhecimento | Administração |
+| --- | --- |
+| ![Base de conhecimento](docs/screenshots/base-de-conhecimento.png) | ![Administração](docs/screenshots/administracao.png) |
 
-```bash
-docker compose up --build
-```
+Tema escuro: [dashboard](docs/screenshots/dashboard-escuro.png) · [chamado](docs/screenshots/chamado-detalhe-escuro.png)
 
-### Usando o Claude na triagem
+**Logins de demonstração** (senha `resolveai123`): `admin@resolveai.dev` · `agent@resolveai.dev` · `user@resolveai.dev`
 
-Por padrão a triagem usa um classificador local por palavras-chave (`AI_PROVIDER=keyword`), que é gratuito e não precisa de chave. Para usar o Claude, crie uma chave em https://console.anthropic.com e configure:
+## Funcionalidades
 
-- Em `backend/.env`, defina `AI_PROVIDER=claude` e `ANTHROPIC_API_KEY=sk-ant-...`
-- O mesmo arquivo é usado rodando local e via Docker (`docker compose up -d --build api`).
-- Os créditos da API valem para qualquer modelo; o modelo usado é o de `AI_MODEL` (padrão `claude-haiku-4-5`).
+**Chamados**
+- Abertura, acompanhamento, comentários e notas internas (invisíveis ao solicitante)
+- Triagem: status, prioridade, categoria, equipe e responsável
+- Busca por texto ou `#número`, filtros por situação, prioridade, categoria, equipe, responsável e data
+- **SLA por prioridade** (24h / 8h / 4h / 1h) com prazo, tempo restante e marcação de estouro
+- Histórico completo de auditoria, incluindo o que a automação fez
 
-### Usando a Voyage AI nos embeddings
+**Inteligência artificial**
+- Classificação automática: categoria, subcategoria, equipe, prioridade, urgência, resumo e **confiança**
+- **Regras de prioridade** configuráveis pelo admin, combinadas com a IA
+- Roteamento para a equipe responsável
+- Sugestão de solução a partir da base de conhecimento, **citando os artigos usados**
 
-Por padrão a busca usa embeddings locais (`EMBEDDING_PROVIDER=local`), gratuitos e offline, que comparam palavras. Para busca semântica de verdade (sinônimos, outras formas de escrever), crie uma chave em https://dashboard.voyageai.com. Os primeiros 200 milhões de tokens do `voyage-4-lite` são gratuitos por conta.
+**Base de conhecimento**
+- Artigos com categoria, tags e status (rascunho, publicado, arquivado)
+- **Busca semântica** com embeddings e pgvector
+- Reindexação sob demanda
 
-- Em `backend/.env`, defina `EMBEDDING_PROVIDER=voyage` e `VOYAGE_API_KEY=pa-...`
-- Depois de trocar de provedor ou modelo, reindexe a base: `POST /knowledge/reindex` (admin). Vetores de modelos diferentes nunca são comparados entre si.
+**Administração e acesso**
+- Três papéis: administrador, atendente e solicitante (RBAC)
+- Multi-tenant: cada organização só enxerga os próprios dados
+- Autenticação JWT com refresh e senhas em Argon2
 
-## Triagem com IA
+**Dashboard**
+- Fila atual, críticos em aberto, resolvidos hoje, SLA em risco e estourado
+- Tempo médio de primeira resposta e de resolução, taxa de resolução
+- Chamados por dia, categoria, prioridade e equipe
+- Métricas da IA: aceitação da categoria e da prioridade, confiança média, artigos mais citados
+
+## Como a IA funciona
 
 ```
 Chamado criado
-  ├─ Regras de prioridade (palavras-chave)  ┐ síncrono, já na resposta
-  ├─ Roteamento pela categoria escolhida    ┘
-  └─ Análise da IA (em segundo plano)
-       ├─ Categoria, subcategoria, equipe, prioridade, urgência, resumo, confiança
-       ├─ Sugestão sempre gravada (ai_* no chamado + ticket_ai_analyses)
-       └─ Aplicada só se confiança ≥ AI_AUTO_APPLY_MIN_CONFIDENCE (padrão 0,7)
+  ├─ Regras de prioridade (palavras-chave)  ┐ síncrono, já vem na resposta da API
+  ├─ Roteamento pela categoria              ┘
+  └─ Em segundo plano:
+       ├─ Classificação por IA  → sugestão gravada + aplicada se confiança ≥ 0,7
+       └─ Busca na base (RAG)   → sugestão de solução com fontes citadas
 ```
 
 Regras que tornam a automação segura:
 
-- **A IA só preenche campos vazios** e **nunca sobrescreve o que um atendente alterou** (verificado pelo histórico).
-- **Regra de prioridade é piso:** se "sistema fora do ar" define CRITICAL, a IA pode subir a prioridade, mas nunca baixar.
-- **Equipe padrão da categoria vence** a equipe sugerida pela IA; a sugestão só é usada quando a categoria não tem equipe padrão.
+- **A IA só preenche campos vazios** e **nunca sobrescreve o que um atendente alterou** (verificado no histórico).
+- **A regra de prioridade é um piso:** a IA pode subir a prioridade, nunca baixar.
+- **A equipe padrão da categoria vence** a equipe sugerida pela IA.
 - **Nomes inventados são descartados:** categoria, subcategoria e equipe precisam existir no catálogo da organização.
-- **Falha da IA não bloqueia nada:** o chamado é criado, as regras funcionam e a falha fica registrada (`AI_ANALYSIS_FAILED`).
-- **Tudo é auditado:** eventos `RULE_APPLIED`, `AI_ANALYZED` e alterações feitas pelo sistema aparecem no histórico com `actor = null`.
+- **A resposta só cita artigos que a busca recuperou**; sem artigo relevante, a sugestão diz que a base não cobre o chamado.
+- **Falha da IA não bloqueia nada:** o chamado é criado, as regras funcionam e a falha fica registrada.
+- **O texto do chamado é tratado como dado**, e o prompt manda ignorar instruções que venham dentro dele (prompt injection).
 
-Detalhes da integração com o Claude:
+**Provedores intercambiáveis.** O padrão é gratuito e roda offline; a IA de verdade é opcional:
 
-- Modelo padrão **`claude-haiku-4-5`**, o mais rápido e barato, suficiente para classificação. Dá para trocar por `AI_MODEL=claude-sonnet-5` ou `claude-opus-5` se for preciso mais precisão.
-- **Saída estruturada:** schema Pydantic validado pelo SDK.
-- **Opções por modelo:** `effort` e o fallback de recusa (`fallbacks="default"`) só são enviados aos modelos que os suportam (Sonnet/Opus e Opus 5/Fable, respectivamente), para nenhuma chamada falhar com erro 400.
-- **Prompt caching:** instruções fixas + catálogo da organização ficam no prefixo cacheado; só o chamado varia.
-- Timeouts, retries e erros do SDK mapeados para códigos próprios (`AI_TIMEOUT`, `AI_RATE_LIMITED`, `AI_AUTH_FAILED`...).
-- Tokens de entrada/saída e latência gravados em cada análise.
+| Função | Padrão (grátis) | Opcional |
+| --- | --- | --- |
+| Classificação | palavras-chave do catálogo | **Claude** (`claude-haiku-4-5`), saída estruturada |
+| Embeddings | hashing local de palavras | **Voyage AI** (`voyage-4-lite`) |
+| Resposta | trecho do artigo mais relevante | **Claude**, resposta escrita a partir dos artigos |
 
-## Testes
-
-```bash
-cd backend
-pytest --cov
-```
-
-Os testes rodam em SQLite em memória por padrão. Para rodar contra o PostgreSQL:
-
-```bash
-TEST_DATABASE_URL=postgresql+psycopg://resolveai:resolveai@127.0.0.1:5432/resolveai_test pytest
-```
-
-> **Windows:** use `127.0.0.1` e não `localhost` nas URLs do banco. O `localhost` resolve primeiro para o IPv6 (`::1`), onde o repasse de portas do WSL pode aceitar a conexão sem encaminhá-la, e a conexão trava.
-
-No SQLite a similaridade é calculada em Python; no PostgreSQL a busca usa o operador `<=>` do pgvector com índice HNSW. Rode os dois antes de publicar mudanças na busca.
+Detalhes da integração com o Claude: modelo configurável, **prompt caching**, parâmetros enviados conforme o modelo (`effort` e fallback de recusa só para quem suporta), timeouts, retries e erros do SDK mapeados para códigos próprios. Tokens de entrada/saída e latência ficam gravados em cada análise.
 
 ## Base de conhecimento e RAG
 
 ```
-Artigo salvo ─► divisão em trechos (parágrafos, ~1.200 caracteres) ─► embeddings ─► pgvector
-Chamado criado ─► embedding da pergunta ─► busca vetorial (cosseno, HNSW) ─► artigos relevantes
-               ─► gerador de resposta (Claude ou extrativo) ─► sugestão + fontes citadas
+Artigo salvo ─► divisão em trechos ─► embeddings ─► pgvector (índice HNSW)
+Chamado ─► embedding da pergunta ─► busca por similaridade ─► artigos relevantes
+        ─► gerador de resposta ─► sugestão + fontes citadas
 ```
 
-- **Só artigos publicados** entram na busca; rascunhos e arquivados ficam de fora.
-- **Nota mínima de similaridade** (`RAG_MIN_SCORE`): abaixo dela o artigo é ignorado. Para os embeddings locais, o padrão 0,15 foi medido nos artigos de exemplo (artigos certos: 0,24–0,36; sem relação: até 0,13).
-- **A resposta só pode citar artigos que foram recuperados:** códigos inventados (ex.: `KB-999`) são descartados. Sem artigos relevantes, a sugestão diz que a base não cobre o chamado.
-- **Fontes guardam código e título** do artigo no momento da sugestão, então continuam legíveis mesmo se o artigo for editado ou apagado.
-- **Dois provedores de cada peça:** embeddings `local` (grátis) ou `voyage`; resposta `extractive` (cita o trecho mais relevante, grátis) ou `claude` (escreve a solução a partir dos artigos).
-- **Falhas não bloqueiam nada:** a sugestão fica registrada como `FAILED` com o código do erro.
+- Só artigos **publicados** entram na busca.
+- **Nota mínima de similaridade** por provedor. Para os embeddings locais, o padrão 0,15 foi medido nos artigos de exemplo: artigos corretos ficaram entre 0,24 e 0,36; sem relação, no máximo 0,13.
+- Cada trecho guarda o modelo que gerou o vetor. **Vetores de modelos diferentes nunca são comparados** — por isso existe a reindexação.
+- As fontes guardam código e título do artigo, e continuam legíveis se o artigo mudar ou for apagado.
 
-## Estrutura do backend
+## Arquitetura
+
+```
+React + Vite (nginx)
+        │  /api
+        ▼
+     FastAPI  ──►  PostgreSQL + pgvector
+        │
+        ├─► Claude (classificação e respostas)
+        └─► Voyage AI (embeddings)
+```
+
+Monólito modular, em camadas: **rotas → serviços → modelos**. As rotas validam entrada e delegam; a regra de negócio fica nos serviços.
 
 ```
 backend/
 ├── app/
-│   ├── api/          # Rotas FastAPI (finas: validam entrada e delegam)
-│   ├── core/         # Config, banco, segurança, erros, logs
-│   ├── models/       # Modelos SQLAlchemy
-│   ├── schemas/      # Contratos Pydantic de entrada/saída
-│   ├── services/     # Regras de negócio (triage, ai_classifier, knowledge, embeddings, rag...)
-│   └── scripts/      # Seed
+│   ├── api/          # Rotas FastAPI e dependências (RBAC)
+│   ├── core/         # Config, banco, segurança, erros, logs, texto
+│   ├── models/       # SQLAlchemy (inclui o tipo de vetor do pgvector)
+│   ├── schemas/      # Contratos Pydantic
+│   ├── services/     # triage, ai_classifier, priority, routing, knowledge,
+│   │                 # embeddings, rag, answer_generator, sla, analytics
+│   └── scripts/      # seed e gerador de dados de demonstração
 ├── migrations/       # Alembic
-└── tests/
+└── tests/            # 184 testes
+frontend/
+├── src/
+│   ├── auth/         # Sessão e refresh de token
+│   ├── components/   # Layout, UI e gráficos
+│   ├── lib/          # Cliente da API, tipos, formatação pt-BR, tradução de erros
+│   └── pages/        # Dashboard, chamados, base de conhecimento, administração
+└── nginx.conf        # Serve o SPA e encaminha /api
 ```
 
-## Decisões de arquitetura
+**Decisões de arquitetura**
 
-- **Monólito modular** com camadas `api → services → models`. As rotas não contêm regra de negócio.
-- **Multi-tenant desde o início:** toda entidade pertence a uma `organization`, e todo acesso é filtrado por ela. Recursos de outra organização retornam 404.
-- **RBAC** com três papéis: `ADMIN`, `AGENT` e `USER`. Solicitantes só enxergam os próprios chamados.
-- **Auditoria:** toda alteração de chamado gera um evento em `ticket_history`, com valores legíveis capturados no momento da mudança.
-- **Enums como VARCHAR:** adicionar um status ou prioridade não exige `ALTER TYPE` no PostgreSQL.
-- **Erros padronizados:** `{"error": {"code": "TICKET_NOT_FOUND", "message": "Ticket not found."}}`.
+- **Multi-tenant desde o início:** tudo tem `organization_id`; dados de outra empresa retornam 404, não 403, para não revelar o que existe.
+- **Auditoria:** toda alteração gera evento em `ticket_history`, com valores legíveis e `actor = null` quando foi a automação.
+- **Enums como VARCHAR:** adicionar um status não exige `ALTER TYPE`.
+- **Erros padronizados:** `{"error": {"code": "TICKET_NOT_FOUND", "message": "Ticket not found."}}`; o frontend traduz pelo código.
 - **Logs estruturados:** `2026-09-14T14:35:12+00:00 INFO ticket.created ticket_id=527 user_id=42`.
+- **Coluna vetorial portátil:** `vector` no PostgreSQL e JSON no SQLite, então a suíte roda nos dois bancos.
+- **Análises em segundo plano** com BackgroundTasks do FastAPI (Redis e Celery ficam para a versão 2).
+
+## Stack
+
+**Backend:** Python 3.13 · FastAPI · Pydantic · SQLAlchemy 2 · Alembic · PostgreSQL 17 + pgvector · JWT + Argon2 · Pytest
+**Frontend:** React 19 · TypeScript · Vite · Tailwind CSS 4 · TanStack Query · React Router · Recharts · Lucide · Vitest + Testing Library
+**IA:** Claude (Anthropic SDK) · Voyage AI (embeddings) · RAG sobre pgvector
+**Infra:** Docker · Docker Compose · nginx · GitHub Actions
+
+## Instalação
+
+Pré-requisitos: **Docker Desktop**. Para desenvolver, também Python 3.13+ e Node 24+.
+
+### Tudo no Docker
+
+```bash
+git clone https://github.com/paulo-carvalho10/resolveai.git
+cd resolveai
+docker compose up -d --build
+
+docker compose exec api python -m app.scripts.seed        # dados básicos
+docker compose exec api python -m app.scripts.demo_data   # 5.000 chamados de demonstração
+```
+
+- Aplicação: http://localhost:5173
+- API e documentação: http://localhost:8000/docs
+
+### Desenvolvimento
+
+```bash
+docker compose up -d db          # só o banco
+
+cd backend
+python -m venv .venv
+.venv\Scripts\activate           # Linux/macOS: source .venv/bin/activate
+pip install -r requirements-dev.txt
+copy .env.example .env           # Linux/macOS: cp .env.example .env
+alembic upgrade head
+python -m app.scripts.seed
+uvicorn app.main:app --reload
+
+cd ../frontend
+npm install
+npm run dev                      # http://localhost:5173
+```
+
+> **Windows:** use `127.0.0.1` e não `localhost` nas URLs do banco. O `localhost` resolve primeiro para IPv6, onde o repasse de portas do WSL pode aceitar a conexão sem encaminhá-la, e ela trava.
+
+### Ligando a IA de verdade (opcional)
+
+No `backend/.env` (o mesmo arquivo vale para o Docker):
+
+```env
+AI_PROVIDER=claude
+ANTHROPIC_API_KEY=sk-ant-...        # console.anthropic.com
+
+EMBEDDING_PROVIDER=voyage
+VOYAGE_API_KEY=pa-...               # dashboard.voyageai.com
+```
+
+Depois de trocar o provedor ou o modelo de embeddings, reindexe: `POST /knowledge/reindex` (admin).
+
+## Variáveis de ambiente
+
+Lista completa e comentada em [`backend/.env.example`](backend/.env.example). As principais:
+
+| Variável | Padrão | Função |
+| --- | --- | --- |
+| `DATABASE_URL` | PostgreSQL local | conexão do banco |
+| `JWT_SECRET_KEY` | inseguro para dev | assinatura dos tokens (obrigatório em produção) |
+| `AI_PROVIDER` | `keyword` | `keyword` (grátis) ou `claude` |
+| `AI_MODEL` | `claude-haiku-4-5` | modelo do Claude |
+| `AI_AUTO_APPLY_MIN_CONFIDENCE` | `0.7` | confiança mínima para aplicar a sugestão |
+| `EMBEDDING_PROVIDER` | `local` | `local` (grátis) ou `voyage` |
+| `RAG_TOP_K` / `RAG_MIN_SCORE` | `3` / por provedor | artigos enviados à IA e similaridade mínima |
+| `SLA_HOURS_*` | 24 / 8 / 4 / 1 | prazo por prioridade |
+
+## Testes
+
+```bash
+cd backend && pytest --cov      # 184 testes
+cd frontend && npm test         # 15 testes
+```
+
+Os testes do backend rodam em **SQLite em memória** por padrão e, com `TEST_DATABASE_URL`, no **PostgreSQL com pgvector** (é assim que o CI roda). Eles cobrem autenticação, permissões, isolamento entre organizações, ciclo de vida do chamado, regras de prioridade, classificação, RAG, SLA, dashboard e os provedores de IA (com clientes falsos, sem gastar API).
+
+O CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) roda lint, testes no PostgreSQL, verificação de que as migrations batem com os modelos, lint + tipos + testes + build do frontend, e o build das imagens Docker.
 
 ## API
 
+Documentação interativa (Swagger/OpenAPI) em `/docs`.
+
 | Método | Rota | Acesso |
 | --- | --- | --- |
-| POST | `/auth/register` | Público (cria organização + admin) |
-| POST | `/auth/login` · `/auth/refresh` | Público |
-| GET | `/auth/me` | Autenticado |
-| GET · POST · PATCH | `/users`, `/users/{id}` | Leitura: agente/admin · Escrita: admin |
-| GET · POST · PATCH · DELETE | `/teams`, `/teams/{id}`, `/teams/{id}/members` | Leitura: agente/admin · Escrita: admin |
-| GET · POST · PATCH · DELETE | `/categories`, `/subcategories/{id}` | Leitura: todos · Escrita: admin |
-| GET · POST | `/tickets` | Todos (solicitante vê só os seus) |
+| POST | `/auth/register` | público (cria organização + admin) |
+| POST | `/auth/login` · `/auth/refresh` | público |
+| GET | `/auth/me` | autenticado |
+| GET · POST · PATCH | `/users`, `/users/{id}` | leitura: agente/admin · escrita: admin |
+| GET · POST · PATCH · DELETE | `/teams`, `/teams/{id}`, `/teams/{id}/members` | leitura: agente/admin · escrita: admin |
+| GET · POST · PATCH · DELETE | `/categories`, `/subcategories/{id}` | leitura: todos · escrita: admin |
+| GET · POST · PATCH · DELETE | `/priority-rules`, `/priority-rules/{id}` | leitura: agente/admin · escrita: admin |
+| GET · POST | `/tickets` | todos (solicitante vê só os seus) |
 | GET · PATCH · DELETE | `/tickets/{id}` | PATCH: agente/admin · DELETE: admin |
-| POST | `/tickets/{id}/assign` · `/tickets/{id}/resolve` | Agente/admin |
-| GET · POST | `/tickets/{id}/messages` | Todos (notas internas só para agentes) |
-| GET | `/tickets/{id}/history` | Agente/admin |
-| POST | `/tickets/{id}/ai/analyze` | Agente/admin (reanalisa agora) |
-| GET | `/tickets/{id}/ai/analyses` | Agente/admin |
-| GET · POST · PATCH · DELETE | `/priority-rules`, `/priority-rules/{id}` | Leitura: agente/admin · Escrita: admin |
-| GET · POST · PATCH · DELETE | `/knowledge`, `/knowledge/{id}` | Leitura: todos (solicitante só publicados) · Escrita: admin |
-| GET | `/knowledge/search?q=` | Autenticado (busca semântica em artigos publicados) |
-| POST | `/knowledge/reindex` | Admin |
-| POST | `/tickets/{id}/ai/suggest` | Agente/admin (gera sugestão agora) |
-| GET | `/tickets/{id}/ai/suggestions` | Agente/admin |
+| POST | `/tickets/{id}/assign` · `/tickets/{id}/resolve` | agente/admin |
+| GET · POST | `/tickets/{id}/messages` | todos (notas internas só para agentes) |
+| GET | `/tickets/{id}/history` | agente/admin |
+| POST · GET | `/tickets/{id}/ai/analyze` · `/tickets/{id}/ai/analyses` | agente/admin |
+| POST · GET | `/tickets/{id}/ai/suggest` · `/tickets/{id}/ai/suggestions` | agente/admin |
+| GET · POST · PATCH · DELETE | `/knowledge`, `/knowledge/{id}` | leitura: todos (solicitante só publicados) · escrita: admin |
+| GET | `/knowledge/search?q=` | autenticado |
+| POST | `/knowledge/reindex` | admin |
+| GET | `/analytics/dashboard` | agente/admin |
 
 ## Roadmap
 
-- [x] **Etapa 1** — FastAPI, PostgreSQL, auth, usuários, chamados, equipes, categorias
-- [x] **Etapa 2** — Classificação por IA (Claude), prioridade por regras + IA, roteamento, confidence score
-- [x] **Etapa 3** — Base de conhecimento, embeddings (Voyage), pgvector, RAG com fontes
-- [ ] **Etapa 4** — Frontend React, dashboard, CI/CD com GitHub Actions, deploy
+- [x] **Etapa 1** — FastAPI, PostgreSQL, autenticação, usuários, chamados, equipes, categorias
+- [x] **Etapa 2** — Classificação por IA, prioridade por regras + IA, roteamento, confidence score
+- [x] **Etapa 3** — Base de conhecimento, embeddings, pgvector, RAG com fontes
+- [x] **Etapa 4** — Frontend React, dashboard, SLA, dados de demonstração, CI
+- [ ] **Versão 2** — Redis + Celery, notificações, anexos, feedback da IA, pausa de SLA, audit log avançado
+- [ ] **Versão 3** — E-mail/WhatsApp/Slack → chamado, API pública, detecção de duplicados, análise de sentimento
 
 ## Licença
 
-MIT
+[MIT](LICENSE)
