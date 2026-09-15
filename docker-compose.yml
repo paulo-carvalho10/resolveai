@@ -1,0 +1,31 @@
+services:
+  db:
+    image: pgvector/pgvector:pg17
+    environment:
+      POSTGRES_USER: resolveai
+      POSTGRES_PASSWORD: resolveai
+      POSTGRES_DB: resolveai
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U resolveai -d resolveai"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build: ./backend
+    environment:
+      DATABASE_URL: postgresql+psycopg://resolveai:resolveai@db:5432/resolveai
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-dev-only-insecure-secret-do-not-use-in-production}
+      CORS_ORIGINS: '["http://localhost:5173"]'
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  pgdata:
