@@ -2,7 +2,6 @@
 
 import logging
 from datetime import UTC, datetime, time, timedelta
-from typing import Any
 
 from sqlalchemy import case, func, or_, select
 from sqlalchemy.orm import Session, selectinload
@@ -28,7 +27,8 @@ from app.schemas.ticket import (
     TicketResolve,
     TicketUpdate,
 )
-from app.services import category_service, team_service, user_service
+from app.services import category_service, team_service, triage_service, user_service
+from app.services.ticket_history import display_name, record_event
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +38,9 @@ _TICKET_RELATIONS = (
     selectinload(Ticket.team),
     selectinload(Ticket.category),
     selectinload(Ticket.subcategory),
+    selectinload(Ticket.ai_team),
+    selectinload(Ticket.ai_category),
+    selectinload(Ticket.ai_subcategory),
 )
 
 _PRIORITY_RANK = case(
@@ -158,7 +161,8 @@ def create_ticket(db: Session, requester: User, data: TicketCreate) -> Ticket:
         subcategory=subcategory,
     )
     db.add(ticket)
-    _record(db, ticket, requester, TicketEventType.CREATED)
+    record_event(db, ticket, requester, TicketEventType.CREATED)
+    triage_service.apply_creation_rules(db, ticket)
     db.commit()
     log_event(logger, "ticket.created", ticket_id=ticket.id, user_id=requester.id)
     return get_ticket(db, requester, ticket.id)
@@ -170,13 +174,15 @@ def update_ticket(db: Session, actor: User, ticket_id: int, data: TicketUpdate) 
     fields = data.model_fields_set
 
     if data.title is not None and data.title != ticket.title:
-        _record(db, ticket, actor, TicketEventType.TITLE_CHANGED, "title", ticket.title, data.title)
+        record_event(
+            db, ticket, actor, TicketEventType.TITLE_CHANGED, "title", ticket.title, data.title
+        )
         ticket.title = data.title
     if data.description is not None and data.description != ticket.description:
-        _record(db, ticket, actor, TicketEventType.DESCRIPTION_CHANGED, "description")
+        record_event(db, ticket, actor, TicketEventType.DESCRIPTION_CHANGED, "description")
         ticket.description = data.description
     if data.priority is not None and data.priority != ticket.priority:
-        _record(
+        record_event(
             db,
             ticket,
             actor,
@@ -194,8 +200,14 @@ def update_ticket(db: Session, actor: User, ticket_id: int, data: TicketUpdate) 
             if data.team_id is not None
             else None
         )
-        _record(
-            db, ticket, actor, TicketEventType.TEAM_CHANGED, "team", _name(ticket.team), _name(team)
+        record_event(
+            db,
+            ticket,
+            actor,
+            TicketEventType.TEAM_CHANGED,
+            "team",
+            display_name(ticket.team),
+            display_name(team),
         )
         ticket.team = team
     if data.status is not None:
@@ -226,7 +238,7 @@ def assign_ticket(db: Session, actor: User, ticket_id: int, assignee_id: int | N
         )
 
     if ticket.assignee_id != assignee.id:
-        _record(
+        record_event(
             db,
             ticket,
             actor,
@@ -252,7 +264,7 @@ def resolve_ticket(db: Session, actor: User, ticket_id: int, data: TicketResolve
     _ensure_not_closed(ticket)
     if data.resolution:
         db.add(TicketMessage(ticket=ticket, author=actor, body=data.resolution))
-        _record(db, ticket, actor, TicketEventType.COMMENT_ADDED)
+        record_event(db, ticket, actor, TicketEventType.COMMENT_ADDED)
     _change_status(db, ticket, actor, TicketStatus.RESOLVED)
     db.commit()
     log_event(logger, "ticket.resolved", ticket_id=ticket.id, user_id=actor.id)
@@ -270,7 +282,7 @@ def add_message(db: Session, actor: User, ticket_id: int, data: MessageCreate) -
     )
     db.add(message)
     ticket.updated_at = utcnow()
-    _record(
+    record_event(
         db,
         ticket,
         actor,
@@ -322,7 +334,7 @@ def _change_status(db: Session, ticket: Ticket, actor: User, new_status: TicketS
         if new_status == TicketStatus.RESOLVED
         else TicketEventType.STATUS_CHANGED
     )
-    _record(db, ticket, actor, event, "status", old_status, new_status)
+    record_event(db, ticket, actor, event, "status", old_status, new_status)
 
 
 def _resolve_classification(
@@ -376,49 +388,24 @@ def _apply_classification(db: Session, ticket: Ticket, actor: User, data: Ticket
         db, actor.organization_id, category_id, subcategory_id, require_active=False
     )
     if category is not ticket.category:
-        _record(
+        record_event(
             db,
             ticket,
             actor,
             TicketEventType.CATEGORY_CHANGED,
             "category",
-            _name(ticket.category),
-            _name(category),
+            display_name(ticket.category),
+            display_name(category),
         )
         ticket.category = category
     if subcategory is not ticket.subcategory:
-        _record(
+        record_event(
             db,
             ticket,
             actor,
             TicketEventType.SUBCATEGORY_CHANGED,
             "subcategory",
-            _name(ticket.subcategory),
-            _name(subcategory),
+            display_name(ticket.subcategory),
+            display_name(subcategory),
         )
         ticket.subcategory = subcategory
-
-
-def _name(entity: Any) -> str | None:
-    return entity.name if entity is not None else None
-
-
-def _record(
-    db: Session,
-    ticket: Ticket,
-    actor: User | None,
-    event_type: TicketEventType,
-    field: str | None = None,
-    old_value: object = None,
-    new_value: object = None,
-) -> None:
-    db.add(
-        TicketHistory(
-            ticket=ticket,
-            actor=actor,
-            event_type=event_type,
-            field=field,
-            old_value=None if old_value is None else str(old_value),
-            new_value=None if new_value is None else str(new_value),
-        )
-    )

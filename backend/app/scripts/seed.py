@@ -1,4 +1,5 @@
-"""Small development seed: one organization, three logins, teams, categories and tickets.
+"""Small development seed: one organization, three logins, teams, categories, priority rules
+and tickets.
 
     python -m app.scripts.seed
 
@@ -13,6 +14,7 @@ from app.core.security import hash_password
 from app.models import (
     Category,
     Organization,
+    PriorityRule,
     Subcategory,
     Team,
     Ticket,
@@ -32,6 +34,19 @@ TEAMS = {
     "Financeiro": "Cobrança, boletos e faturas.",
     "Suporte Geral": "Primeiro atendimento e dúvidas de uso.",
 }
+
+PRIORITY_RULES = [
+    (
+        "Sistema fora do ar",
+        ["fora do ar", "sistema caiu", "parou tudo", "ninguém consegue acessar"],
+        TicketPriority.CRITICAL,
+    ),
+    (
+        "Faturamento bloqueado",
+        ["não consigo emitir", "fechar o faturamento", "rejeição"],
+        TicketPriority.HIGH,
+    ),
+]
 
 CATEGORIES = {
     "Fiscal": ("ERP Fiscal", ["NF-e", "NFS-e", "SPED"]),
@@ -84,9 +99,36 @@ def _user(org: Organization, email: str, name: str, role: UserRole) -> User:
 
 
 def seed(db: Session) -> bool:
-    if db.scalar(select(User).where(User.email == "admin@resolveai.dev")) is not None:
-        return False
+    """Idempotent: creates what is missing and returns whether anything was created."""
+    admin = db.scalar(select(User).where(User.email == "admin@resolveai.dev"))
+    if admin is None:
+        _seed_organization(db)
+        admin = db.scalar(select(User).where(User.email == "admin@resolveai.dev"))
+        assert admin is not None
+        _seed_priority_rules(db, admin.organization_id)
+        db.commit()
+        return True
 
+    # Databases seeded before priority rules existed get the default rules.
+    if db.scalar(
+        select(PriorityRule.id).where(PriorityRule.organization_id == admin.organization_id)
+    ):
+        return False
+    _seed_priority_rules(db, admin.organization_id)
+    db.commit()
+    return True
+
+
+def _seed_priority_rules(db: Session, organization_id: int) -> None:
+    db.add_all(
+        PriorityRule(
+            organization_id=organization_id, name=name, keywords=keywords, priority=priority
+        )
+        for name, keywords, priority in PRIORITY_RULES
+    )
+
+
+def _seed_organization(db: Session) -> None:
     org = Organization(name="Acme Software")
     db.add(org)
     db.flush()
@@ -129,9 +171,7 @@ def seed(db: Session) -> bool:
         )
         ticket.history.append(TicketHistory(actor=requester, event_type=TicketEventType.CREATED))
         db.add(ticket)
-
-    db.commit()
-    return True
+    db.flush()
 
 
 def main() -> None:

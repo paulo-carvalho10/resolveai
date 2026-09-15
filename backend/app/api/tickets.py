@@ -1,9 +1,18 @@
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Query, Response, status
+from fastapi import APIRouter, BackgroundTasks, Query, Response, status
 
-from app.api.deps import AdminUser, CurrentUser, DbSession, StaffUser
-from app.models import Ticket, TicketHistory, TicketMessage
+from app.api.deps import (
+    AdminUser,
+    ClassifierDep,
+    CurrentUser,
+    DbSession,
+    SessionFactory,
+    StaffUser,
+)
+from app.core.config import get_settings
+from app.models import Ticket, TicketAIAnalysis, TicketHistory, TicketMessage
+from app.schemas.ai import AnalysisRead
 from app.schemas.common import Page
 from app.schemas.ticket import (
     HistoryRead,
@@ -16,7 +25,7 @@ from app.schemas.ticket import (
     TicketResolve,
     TicketUpdate,
 )
-from app.services import ticket_service
+from app.services import ticket_service, triage_service
 
 router = APIRouter(prefix="/tickets", tags=["tickets"])
 
@@ -31,8 +40,21 @@ def list_tickets(
 
 
 @router.post("", response_model=TicketRead, status_code=status.HTTP_201_CREATED)
-def create_ticket(data: TicketCreate, actor: CurrentUser, db: DbSession) -> Ticket:
-    return ticket_service.create_ticket(db, actor, data)
+def create_ticket(
+    data: TicketCreate,
+    actor: CurrentUser,
+    db: DbSession,
+    background_tasks: BackgroundTasks,
+    classifier: ClassifierDep,
+    session_factory: SessionFactory,
+) -> Ticket:
+    """Priority rules and routing run immediately; AI classification runs after the response."""
+    ticket = ticket_service.create_ticket(db, actor, data)
+    if get_settings().ai_analyze_on_create:
+        background_tasks.add_task(
+            triage_service.analyze_in_background, session_factory, classifier, ticket.id
+        )
+    return ticket
 
 
 @router.get("/{ticket_id}", response_model=TicketRead)
@@ -79,3 +101,19 @@ def add_message(
 @router.get("/{ticket_id}/history", response_model=list[HistoryRead])
 def list_history(ticket_id: int, actor: StaffUser, db: DbSession) -> list[TicketHistory]:
     return ticket_service.list_history(db, actor, ticket_id)
+
+
+@router.post("/{ticket_id}/ai/analyze", response_model=AnalysisRead)
+def analyze_ticket(
+    ticket_id: int, actor: StaffUser, db: DbSession, classifier: ClassifierDep
+) -> TicketAIAnalysis:
+    """Run the AI classification now and apply the result under the same safety rules."""
+    ticket = ticket_service.get_ticket(db, actor, ticket_id)
+    return triage_service.analyze_ticket_on_request(db, ticket, classifier, actor)
+
+
+@router.get("/{ticket_id}/ai/analyses", response_model=list[AnalysisRead])
+def list_analyses(ticket_id: int, actor: StaffUser, db: DbSession) -> list[TicketAIAnalysis]:
+    """Every classification run for this ticket, newest first."""
+    ticket = ticket_service.get_ticket(db, actor, ticket_id)
+    return triage_service.list_analyses(db, ticket)

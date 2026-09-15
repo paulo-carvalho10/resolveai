@@ -5,6 +5,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
+from app.core.config import get_settings
 from app.models import Organization, Ticket, User, UserRole
 from tests.conftest import auth_headers
 
@@ -12,6 +13,12 @@ NFE_TICKET = {
     "title": "Não consigo emitir NF-e",
     "description": "O sistema apresenta rejeição 539 ao transmitir a nota.",
 }
+
+
+@pytest.fixture(autouse=True)
+def _no_ai_on_create(monkeypatch: pytest.MonkeyPatch) -> None:
+    """These tests cover the manual ticket lifecycle; AI triage is covered in test_triage.py."""
+    monkeypatch.setattr(get_settings(), "ai_analyze_on_create", False)
 
 
 @pytest.fixture

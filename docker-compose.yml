@@ -21,6 +21,10 @@ services:
       DATABASE_URL: postgresql+psycopg://resolveai:resolveai@db:5432/resolveai
       JWT_SECRET_KEY: ${JWT_SECRET_KEY:-dev-only-insecure-secret-do-not-use-in-production}
       CORS_ORIGINS: '["http://localhost:5173"]'
+      # Set these in a .env file next to this compose file to use Claude.
+      AI_PROVIDER: ${AI_PROVIDER:-keyword}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      AI_MODEL: ${AI_MODEL:-claude-haiku-4-5}
     ports:
       - "8000:8000"
     depends_on:

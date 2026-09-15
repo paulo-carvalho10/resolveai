@@ -63,6 +63,14 @@ class TicketRead(ORMModel):
     created_at: datetime
     updated_at: datetime
     resolved_at: datetime | None
+    # Latest AI suggestion. Shown next to the real fields even when it was not applied.
+    ai_category: NamedRef | None
+    ai_subcategory: NamedRef | None
+    ai_team: NamedRef | None
+    ai_priority: TicketPriority | None
+    ai_confidence: float | None
+    ai_summary: str | None
+    ai_analyzed_at: datetime | None
 
 
 class TicketFilters(PageParams):

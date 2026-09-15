@@ -8,6 +8,11 @@ import os
 
 os.environ["ENVIRONMENT"] = "test"
 os.environ["JWT_SECRET_KEY"] = "test-secret-key-that-is-long-enough-for-hs256-signing"
+# Safety net: anything that bypasses the fixtures below must never reach a real database or
+# the paid AI API, even if a local .env points at them.
+os.environ["DATABASE_URL"] = "sqlite+pysqlite:///:memory:"
+os.environ["AI_PROVIDER"] = "keyword"
+os.environ.pop("ANTHROPIC_API_KEY", None)
 
 from collections.abc import Callable, Iterator
 
@@ -17,10 +22,12 @@ from sqlalchemy import Engine, create_engine, event
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from app.api.deps import get_classifier, get_session_factory
 from app.core.database import get_db
 from app.core.security import TokenType, create_token, hash_password
 from app.main import app
 from app.models import Base, Organization, User, UserRole
+from app.services.ai_classifier import Classifier, KeywordClassifier
 
 TEST_DATABASE_URL = os.environ.get("TEST_DATABASE_URL", "sqlite+pysqlite:///:memory:")
 PASSWORD = "correct-horse-battery"
@@ -57,12 +64,21 @@ def db(session_factory: sessionmaker[Session]) -> Iterator[Session]:
 
 
 @pytest.fixture
-def client(session_factory: sessionmaker[Session]) -> Iterator[TestClient]:
+def classifier() -> Classifier:
+    """Override in a test module to control what the AI returns."""
+    return KeywordClassifier()
+
+
+@pytest.fixture
+def client(session_factory: sessionmaker[Session], classifier: Classifier) -> Iterator[TestClient]:
     def override_get_db() -> Iterator[Session]:
         with session_factory() as session:
             yield session
 
     app.dependency_overrides[get_db] = override_get_db
+    # Background AI analysis opens its own session: it must use the test database too.
+    app.dependency_overrides[get_session_factory] = lambda: session_factory
+    app.dependency_overrides[get_classifier] = lambda: classifier
     with TestClient(app) as test_client:
         yield test_client
     app.dependency_overrides.clear()

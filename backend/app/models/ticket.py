@@ -8,6 +8,7 @@ from app.models.base import Base, TimestampMixin, UTCDateTime, enum_column, utcn
 from app.models.enums import TicketEventType, TicketPriority, TicketStatus
 
 if TYPE_CHECKING:
+    from app.models.ai import TicketAIAnalysis
     from app.models.category import Category, Subcategory
     from app.models.team import Team
     from app.models.user import User
@@ -46,11 +47,33 @@ class Ticket(TimestampMixin, Base):
     )
     resolved_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
 
+    # Latest AI suggestion, kept even when it was not applied, so humans can compare.
+    ai_category_id: Mapped[int | None] = mapped_column(
+        ForeignKey("categories.id", ondelete="SET NULL")
+    )
+    ai_subcategory_id: Mapped[int | None] = mapped_column(
+        ForeignKey("subcategories.id", ondelete="SET NULL")
+    )
+    ai_team_id: Mapped[int | None] = mapped_column(ForeignKey("teams.id", ondelete="SET NULL"))
+    ai_priority: Mapped[TicketPriority | None] = mapped_column(enum_column(TicketPriority))
+    ai_confidence: Mapped[float | None]
+    ai_summary: Mapped[str | None] = mapped_column(Text)
+    ai_analyzed_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+
     requester: Mapped["User"] = relationship(foreign_keys=[requester_id])
     assignee: Mapped["User | None"] = relationship(foreign_keys=[assignee_id])
-    team: Mapped["Team | None"] = relationship()
-    category: Mapped["Category | None"] = relationship()
-    subcategory: Mapped["Subcategory | None"] = relationship()
+    team: Mapped["Team | None"] = relationship(foreign_keys=[team_id])
+    category: Mapped["Category | None"] = relationship(foreign_keys=[category_id])
+    subcategory: Mapped["Subcategory | None"] = relationship(foreign_keys=[subcategory_id])
+    ai_team: Mapped["Team | None"] = relationship(foreign_keys=[ai_team_id])
+    ai_category: Mapped["Category | None"] = relationship(foreign_keys=[ai_category_id])
+    ai_subcategory: Mapped["Subcategory | None"] = relationship(foreign_keys=[ai_subcategory_id])
+    ai_analyses: Mapped[list["TicketAIAnalysis"]] = relationship(
+        back_populates="ticket",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        order_by="TicketAIAnalysis.id",
+    )
     messages: Mapped[list["TicketMessage"]] = relationship(
         back_populates="ticket", cascade="all, delete-orphan", passive_deletes=True
     )
