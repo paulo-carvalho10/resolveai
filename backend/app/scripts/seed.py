@@ -1,5 +1,5 @@
-"""Small development seed: one organization, three logins, teams, categories, priority rules
-and tickets.
+"""Small development seed: one organization, three logins, teams, categories, priority rules,
+tickets and knowledge base articles (indexed with the configured embedding provider).
 
     python -m app.scripts.seed
 
@@ -9,10 +9,12 @@ The large demo dataset (5,000 tickets) comes in a later stage.
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.config import get_settings
 from app.core.database import SessionLocal
 from app.core.security import hash_password
 from app.models import (
     Category,
+    KnowledgeArticle,
     Organization,
     PriorityRule,
     Subcategory,
@@ -25,6 +27,9 @@ from app.models import (
     User,
     UserRole,
 )
+from app.scripts.seed_knowledge import ARTICLES
+from app.services import knowledge_service
+from app.services.embeddings import Embedder, HashingEmbedder, build_embedder
 
 PASSWORD = "resolveai123"
 
@@ -98,25 +103,57 @@ def _user(org: Organization, email: str, name: str, role: UserRole) -> User:
     )
 
 
-def seed(db: Session) -> bool:
-    """Idempotent: creates what is missing and returns whether anything was created."""
+def seed(db: Session, embedder: Embedder | None = None) -> bool:
+    """Idempotent: creates each missing part and returns whether anything was created.
+
+    Databases seeded by an earlier stage get the parts added since (rules, articles).
+    """
+    created = False
     admin = db.scalar(select(User).where(User.email == "admin@resolveai.dev"))
     if admin is None:
         _seed_organization(db)
+        db.commit()
         admin = db.scalar(select(User).where(User.email == "admin@resolveai.dev"))
         assert admin is not None
-        _seed_priority_rules(db, admin.organization_id)
-        db.commit()
-        return True
+        created = True
+    org_id = admin.organization_id
 
-    # Databases seeded before priority rules existed get the default rules.
-    if db.scalar(
-        select(PriorityRule.id).where(PriorityRule.organization_id == admin.organization_id)
-    ):
-        return False
-    _seed_priority_rules(db, admin.organization_id)
-    db.commit()
-    return True
+    if not db.scalar(select(PriorityRule.id).where(PriorityRule.organization_id == org_id)):
+        _seed_priority_rules(db, org_id)
+        db.commit()
+        created = True
+
+    if not db.scalar(select(KnowledgeArticle.id).where(KnowledgeArticle.organization_id == org_id)):
+        articles = _seed_articles(db, admin)
+        db.commit()
+        for article in articles:
+            knowledge_service.index_article(db, article, embedder or HashingEmbedder())
+        created = True
+
+    return created
+
+
+def _seed_articles(db: Session, author: User) -> list[KnowledgeArticle]:
+    categories = {
+        category.name: category
+        for category in db.scalars(
+            select(Category).where(Category.organization_id == author.organization_id)
+        )
+    }
+    articles = [
+        KnowledgeArticle(
+            organization_id=author.organization_id,
+            title=title,
+            content=content,
+            category=categories.get(category_name) if category_name else None,
+            tags=tags,
+            status=status,
+            author=author,
+        )
+        for title, category_name, tags, status, content in ARTICLES
+    ]
+    db.add_all(articles)
+    return articles
 
 
 def _seed_priority_rules(db: Session, organization_id: int) -> None:
@@ -176,7 +213,7 @@ def _seed_organization(db: Session) -> None:
 
 def main() -> None:
     with SessionLocal() as db:
-        created = seed(db)
+        created = seed(db, build_embedder(get_settings()))
     if created:
         print(f"Seed complete. Log in with admin|agent|user@resolveai.dev / {PASSWORD}")
     else:

@@ -12,14 +12,26 @@ from app.core.errors import AuthenticationError, PermissionDeniedError
 from app.models import User, UserRole
 from app.services import auth_service
 from app.services.ai_classifier import Classifier, build_classifier
+from app.services.answer_generator import AnswerGenerator, build_answer_generator
+from app.services.embeddings import Embedder, build_embedder
 
 DbSession = Annotated[Session, Depends(get_db)]
 
 
+# One instance per process: the HTTP clients inside pool connections.
 @lru_cache
 def get_classifier() -> Classifier:
-    # One client per process: the Anthropic client pools connections.
     return build_classifier(get_settings())
+
+
+@lru_cache
+def get_embedder() -> Embedder:
+    return build_embedder(get_settings())
+
+
+@lru_cache
+def get_answer_generator() -> AnswerGenerator:
+    return build_answer_generator(get_settings())
 
 
 def get_session_factory() -> Callable[[], Session]:
@@ -28,6 +40,8 @@ def get_session_factory() -> Callable[[], Session]:
 
 
 ClassifierDep = Annotated[Classifier, Depends(get_classifier)]
+EmbedderDep = Annotated[Embedder, Depends(get_embedder)]
+AnswerGeneratorDep = Annotated[AnswerGenerator, Depends(get_answer_generator)]
 SessionFactory = Annotated[Callable[[], Session], Depends(get_session_factory)]
 
 _bearer = HTTPBearer(auto_error=False)

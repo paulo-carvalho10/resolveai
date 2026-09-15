@@ -4,16 +4,19 @@ from fastapi import APIRouter, BackgroundTasks, Query, Response, status
 
 from app.api.deps import (
     AdminUser,
+    AnswerGeneratorDep,
     ClassifierDep,
     CurrentUser,
     DbSession,
+    EmbedderDep,
     SessionFactory,
     StaffUser,
 )
 from app.core.config import get_settings
-from app.models import Ticket, TicketAIAnalysis, TicketHistory, TicketMessage
+from app.models import Ticket, TicketAIAnalysis, TicketHistory, TicketMessage, TicketSuggestion
 from app.schemas.ai import AnalysisRead
 from app.schemas.common import Page
+from app.schemas.knowledge import SuggestionRead
 from app.schemas.ticket import (
     HistoryRead,
     MessageCreate,
@@ -25,7 +28,7 @@ from app.schemas.ticket import (
     TicketResolve,
     TicketUpdate,
 )
-from app.services import ticket_service, triage_service
+from app.services import rag_service, ticket_service, triage_service
 
 router = APIRouter(prefix="/tickets", tags=["tickets"])
 
@@ -46,13 +49,21 @@ def create_ticket(
     db: DbSession,
     background_tasks: BackgroundTasks,
     classifier: ClassifierDep,
+    embedder: EmbedderDep,
+    generator: AnswerGeneratorDep,
     session_factory: SessionFactory,
 ) -> Ticket:
-    """Priority rules and routing run immediately; AI classification runs after the response."""
+    """Priority rules and routing run immediately. After the response, in order: AI
+    classification, then a knowledge base suggestion."""
     ticket = ticket_service.create_ticket(db, actor, data)
-    if get_settings().ai_analyze_on_create:
+    settings = get_settings()
+    if settings.ai_analyze_on_create:
         background_tasks.add_task(
             triage_service.analyze_in_background, session_factory, classifier, ticket.id
+        )
+    if settings.ai_suggest_on_create:
+        background_tasks.add_task(
+            rag_service.suggest_in_background, session_factory, embedder, generator, ticket.id
         )
     return ticket
 
@@ -117,3 +128,23 @@ def list_analyses(ticket_id: int, actor: StaffUser, db: DbSession) -> list[Ticke
     """Every classification run for this ticket, newest first."""
     ticket = ticket_service.get_ticket(db, actor, ticket_id)
     return triage_service.list_analyses(db, ticket)
+
+
+@router.post("/{ticket_id}/ai/suggest", response_model=SuggestionRead)
+def suggest_solution(
+    ticket_id: int,
+    actor: StaffUser,
+    db: DbSession,
+    embedder: EmbedderDep,
+    generator: AnswerGeneratorDep,
+) -> TicketSuggestion:
+    """Search the knowledge base and generate a suggested solution with its sources now."""
+    ticket = ticket_service.get_ticket(db, actor, ticket_id)
+    return rag_service.suggest_on_request(db, ticket, embedder, generator, actor)
+
+
+@router.get("/{ticket_id}/ai/suggestions", response_model=list[SuggestionRead])
+def list_suggestions(ticket_id: int, actor: StaffUser, db: DbSession) -> list[TicketSuggestion]:
+    """Every suggestion generated for this ticket, newest first."""
+    ticket = ticket_service.get_ticket(db, actor, ticket_id)
+    return rag_service.list_suggestions(db, ticket)

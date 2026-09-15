@@ -2,11 +2,11 @@
 
 AI-powered service desk that automatically classifies, prioritizes and routes support tickets while generating context-aware solutions using RAG.
 
-> 🚧 Em desenvolvimento. **Etapas 1 e 2 concluídas:** backend base e triagem automática com IA (classificação, prioridade por regras + IA, roteamento e confidence score).
+> 🚧 Em desenvolvimento. **Etapas 1, 2 e 3 concluídas:** backend base, triagem automática com IA e base de conhecimento com RAG (sugestões de solução com fontes).
 
 ## Stack
 
-Python 3.13 · FastAPI · Pydantic · SQLAlchemy 2 · Alembic · PostgreSQL + pgvector · JWT + Argon2 · Claude (Anthropic SDK) · Pytest · Docker
+Python 3.13 · FastAPI · Pydantic · SQLAlchemy 2 · Alembic · PostgreSQL + pgvector · JWT + Argon2 · Claude (Anthropic SDK) · Voyage AI (embeddings) · Pytest · Docker
 
 ## Rodando localmente
 
@@ -51,6 +51,13 @@ Por padrão a triagem usa um classificador local por palavras-chave (`AI_PROVIDE
 - Em `backend/.env`, defina `AI_PROVIDER=claude` e `ANTHROPIC_API_KEY=sk-ant-...`
 - O mesmo arquivo é usado rodando local e via Docker (`docker compose up -d --build api`).
 - Os créditos da API valem para qualquer modelo; o modelo usado é o de `AI_MODEL` (padrão `claude-haiku-4-5`).
+
+### Usando a Voyage AI nos embeddings
+
+Por padrão a busca usa embeddings locais (`EMBEDDING_PROVIDER=local`), gratuitos e offline, que comparam palavras. Para busca semântica de verdade (sinônimos, outras formas de escrever), crie uma chave em https://dashboard.voyageai.com. Os primeiros 200 milhões de tokens do `voyage-4-lite` são gratuitos por conta.
+
+- Em `backend/.env`, defina `EMBEDDING_PROVIDER=voyage` e `VOYAGE_API_KEY=pa-...`
+- Depois de trocar de provedor ou modelo, reindexe a base: `POST /knowledge/reindex` (admin). Vetores de modelos diferentes nunca são comparados entre si.
 
 ## Triagem com IA
 
@@ -97,6 +104,23 @@ TEST_DATABASE_URL=postgresql+psycopg://resolveai:resolveai@127.0.0.1:5432/resolv
 
 > **Windows:** use `127.0.0.1` e não `localhost` nas URLs do banco. O `localhost` resolve primeiro para o IPv6 (`::1`), onde o repasse de portas do WSL pode aceitar a conexão sem encaminhá-la, e a conexão trava.
 
+No SQLite a similaridade é calculada em Python; no PostgreSQL a busca usa o operador `<=>` do pgvector com índice HNSW. Rode os dois antes de publicar mudanças na busca.
+
+## Base de conhecimento e RAG
+
+```
+Artigo salvo ─► divisão em trechos (parágrafos, ~1.200 caracteres) ─► embeddings ─► pgvector
+Chamado criado ─► embedding da pergunta ─► busca vetorial (cosseno, HNSW) ─► artigos relevantes
+               ─► gerador de resposta (Claude ou extrativo) ─► sugestão + fontes citadas
+```
+
+- **Só artigos publicados** entram na busca; rascunhos e arquivados ficam de fora.
+- **Nota mínima de similaridade** (`RAG_MIN_SCORE`): abaixo dela o artigo é ignorado. Para os embeddings locais, o padrão 0,15 foi medido nos artigos de exemplo (artigos certos: 0,24–0,36; sem relação: até 0,13).
+- **A resposta só pode citar artigos que foram recuperados:** códigos inventados (ex.: `KB-999`) são descartados. Sem artigos relevantes, a sugestão diz que a base não cobre o chamado.
+- **Fontes guardam código e título** do artigo no momento da sugestão, então continuam legíveis mesmo se o artigo for editado ou apagado.
+- **Dois provedores de cada peça:** embeddings `local` (grátis) ou `voyage`; resposta `extractive` (cita o trecho mais relevante, grátis) ou `claude` (escreve a solução a partir dos artigos).
+- **Falhas não bloqueiam nada:** a sugestão fica registrada como `FAILED` com o código do erro.
+
 ## Estrutura do backend
 
 ```
@@ -106,7 +130,7 @@ backend/
 │   ├── core/         # Config, banco, segurança, erros, logs
 │   ├── models/       # Modelos SQLAlchemy
 │   ├── schemas/      # Contratos Pydantic de entrada/saída
-│   ├── services/     # Regras de negócio (ai_classifier, priority, routing, triage...)
+│   ├── services/     # Regras de negócio (triage, ai_classifier, knowledge, embeddings, rag...)
 │   └── scripts/      # Seed
 ├── migrations/       # Alembic
 └── tests/
@@ -140,12 +164,17 @@ backend/
 | POST | `/tickets/{id}/ai/analyze` | Agente/admin (reanalisa agora) |
 | GET | `/tickets/{id}/ai/analyses` | Agente/admin |
 | GET · POST · PATCH · DELETE | `/priority-rules`, `/priority-rules/{id}` | Leitura: agente/admin · Escrita: admin |
+| GET · POST · PATCH · DELETE | `/knowledge`, `/knowledge/{id}` | Leitura: todos (solicitante só publicados) · Escrita: admin |
+| GET | `/knowledge/search?q=` | Autenticado (busca semântica em artigos publicados) |
+| POST | `/knowledge/reindex` | Admin |
+| POST | `/tickets/{id}/ai/suggest` | Agente/admin (gera sugestão agora) |
+| GET | `/tickets/{id}/ai/suggestions` | Agente/admin |
 
 ## Roadmap
 
 - [x] **Etapa 1** — FastAPI, PostgreSQL, auth, usuários, chamados, equipes, categorias
 - [x] **Etapa 2** — Classificação por IA (Claude), prioridade por regras + IA, roteamento, confidence score
-- [ ] **Etapa 3** — Base de conhecimento, embeddings (Voyage), pgvector, RAG com fontes
+- [x] **Etapa 3** — Base de conhecimento, embeddings (Voyage), pgvector, RAG com fontes
 - [ ] **Etapa 4** — Frontend React, dashboard, CI/CD com GitHub Actions, deploy
 
 ## Licença

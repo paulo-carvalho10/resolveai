@@ -8,7 +8,8 @@ DEV_JWT_SECRET = "dev-only-insecure-secret-do-not-use-in-production"
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    # env_ignore_empty: `RAG_MIN_SCORE=` in a .env file means "use the default", not "".
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore", env_ignore_empty=True)
 
     app_name: str = "ResolveAI"
     environment: str = "development"
@@ -42,12 +43,36 @@ class Settings(BaseSettings):
     ai_auto_apply_min_confidence: float = Field(0.7, ge=0, le=1)
     ai_analyze_on_create: bool = True
 
+    # --- Knowledge base / RAG ---
+    # "local" hashes words into vectors (free, offline, lexical). "voyage" calls Voyage AI
+    # (semantic; the first 200M tokens of voyage-4-lite are free per account).
+    embedding_provider: Literal["local", "voyage"] = "local"
+    voyage_api_key: str | None = None
+    embedding_model: str = "voyage-4-lite"
+    embedding_timeout_seconds: float = 30.0
+    # Articles passed to the answer generator.
+    rag_top_k: int = Field(3, ge=1, le=10)
+    # Minimum cosine similarity for a chunk to count as relevant. Scores are not comparable
+    # across providers, so each provider has its own default (see `effective_rag_min_score`).
+    rag_min_score: float | None = Field(None, ge=0, le=1)
+    ai_suggest_on_create: bool = True
+
+    @property
+    def effective_rag_min_score(self) -> float:
+        if self.rag_min_score is not None:
+            return self.rag_min_score
+        # local: measured on the seed articles, relevant matches scored 0.24-0.36 and unrelated
+        # ones at most 0.13. voyage: starting estimate, tune with real tickets.
+        return 0.35 if self.embedding_provider == "voyage" else 0.15
+
     @model_validator(mode="after")
     def _require_real_secret_in_production(self) -> "Settings":
         if self.environment == "production" and self.jwt_secret_key == DEV_JWT_SECRET:
             raise ValueError("JWT_SECRET_KEY must be set in production.")
         if self.ai_provider == "claude" and not self.anthropic_api_key:
             raise ValueError("ANTHROPIC_API_KEY must be set when AI_PROVIDER=claude.")
+        if self.embedding_provider == "voyage" and not self.voyage_api_key:
+            raise ValueError("VOYAGE_API_KEY must be set when EMBEDDING_PROVIDER=voyage.")
         return self
 
 

@@ -9,6 +9,14 @@ def normalize(text: str) -> str:
     return re.sub(r"\s+", " ", without_accents).strip()
 
 
+def slugify(text: str) -> str:
+    """Turn text into a tag slug (Rejeição 539 -> rejeicao-539).
+
+    Used both when storing and when filtering tags, so the two always agree.
+    """
+    return "-".join(normalize(text).split())
+
+
 def contains_phrase(normalized_text: str, phrase: str) -> bool:
     """Whole-word match of `phrase` inside text already passed through `normalize`."""
     pattern = rf"(?<!\w){re.escape(normalize(phrase))}(?!\w)"

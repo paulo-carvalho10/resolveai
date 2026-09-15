@@ -41,9 +41,9 @@ from app.services.ai_classifier import (
     CatalogCategory,
     CatalogTeam,
     Classifier,
-    ClassifierError,
     TicketText,
 )
+from app.services.claude import AIError
 from app.services.ticket_history import display_name, fields_changed_by_humans, record_event
 
 logger = logging.getLogger(__name__)
@@ -100,7 +100,7 @@ def analyze_ticket(
 
     try:
         result = classifier.classify(text, catalog)
-    except ClassifierError as exc:
+    except AIError as exc:
         analysis = TicketAIAnalysis(
             ticket=ticket,
             requested_by=requested_by,

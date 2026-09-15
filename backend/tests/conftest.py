@@ -12,22 +12,31 @@ os.environ["JWT_SECRET_KEY"] = "test-secret-key-that-is-long-enough-for-hs256-si
 # the paid AI API, even if a local .env points at them.
 os.environ["DATABASE_URL"] = "sqlite+pysqlite:///:memory:"
 os.environ["AI_PROVIDER"] = "keyword"
+os.environ["EMBEDDING_PROVIDER"] = "local"
 os.environ.pop("ANTHROPIC_API_KEY", None)
+os.environ.pop("VOYAGE_API_KEY", None)
 
 from collections.abc import Callable, Iterator
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import Engine, create_engine, event
+from sqlalchemy import Engine, create_engine, event, text
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from app.api.deps import get_classifier, get_session_factory
+from app.api.deps import (
+    get_answer_generator,
+    get_classifier,
+    get_embedder,
+    get_session_factory,
+)
 from app.core.database import get_db
 from app.core.security import TokenType, create_token, hash_password
 from app.main import app
 from app.models import Base, Organization, User, UserRole
 from app.services.ai_classifier import Classifier, KeywordClassifier
+from app.services.answer_generator import AnswerGenerator, ExtractiveAnswerGenerator
+from app.services.embeddings import Embedder, HashingEmbedder
 
 TEST_DATABASE_URL = os.environ.get("TEST_DATABASE_URL", "sqlite+pysqlite:///:memory:")
 PASSWORD = "correct-horse-battery"
@@ -45,6 +54,9 @@ def engine() -> Iterator[Engine]:
             dbapi_connection.execute("PRAGMA foreign_keys=ON")
     else:
         engine = create_engine(TEST_DATABASE_URL)
+        # The schema comes from metadata, not migrations, so enable pgvector here.
+        with engine.begin() as connection:
+            connection.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
 
     Base.metadata.create_all(engine)
     yield engine
@@ -70,7 +82,22 @@ def classifier() -> Classifier:
 
 
 @pytest.fixture
-def client(session_factory: sessionmaker[Session], classifier: Classifier) -> Iterator[TestClient]:
+def embedder() -> Embedder:
+    return HashingEmbedder()
+
+
+@pytest.fixture
+def answer_generator() -> AnswerGenerator:
+    return ExtractiveAnswerGenerator()
+
+
+@pytest.fixture
+def client(
+    session_factory: sessionmaker[Session],
+    classifier: Classifier,
+    embedder: Embedder,
+    answer_generator: AnswerGenerator,
+) -> Iterator[TestClient]:
     def override_get_db() -> Iterator[Session]:
         with session_factory() as session:
             yield session
@@ -79,6 +106,8 @@ def client(session_factory: sessionmaker[Session], classifier: Classifier) -> It
     # Background AI analysis opens its own session: it must use the test database too.
     app.dependency_overrides[get_session_factory] = lambda: session_factory
     app.dependency_overrides[get_classifier] = lambda: classifier
+    app.dependency_overrides[get_embedder] = lambda: embedder
+    app.dependency_overrides[get_answer_generator] = lambda: answer_generator
     with TestClient(app) as test_client:
         yield test_client
     app.dependency_overrides.clear()

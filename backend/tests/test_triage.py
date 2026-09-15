@@ -13,9 +13,9 @@ from app.services.ai_classifier import (
     Catalog,
     Classification,
     ClassificationResult,
-    ClassifierError,
     TicketText,
 )
+from app.services.claude import AIError
 from tests.conftest import auth_headers
 
 NFE_TICKET = {
@@ -307,7 +307,7 @@ def test_ai_failure_does_not_block_ticket_creation(
     classifier: StubClassifier,
 ) -> None:
     create_rule(client, admin, ["faturamento"], "HIGH")
-    classifier.outcome = ClassifierError("AI_TIMEOUT", "timeout")
+    classifier.outcome = AIError("AI_TIMEOUT", "timeout")
 
     ticket = fetch(client, agent, open_ticket()["id"])
 
@@ -389,7 +389,7 @@ def test_manual_analysis_failure_returns_502_and_is_recorded(
 ) -> None:
     monkeypatch.setattr(get_settings(), "ai_analyze_on_create", False)
     ticket = open_ticket()
-    classifier.outcome = ClassifierError("AI_RATE_LIMITED", "slow down")
+    classifier.outcome = AIError("AI_RATE_LIMITED", "slow down")
 
     response = client.post(f"/tickets/{ticket['id']}/ai/analyze", headers=auth_headers(agent))
 

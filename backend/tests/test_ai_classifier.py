@@ -7,20 +7,18 @@ import pytest
 
 from app.core.config import Settings
 from app.services.ai_classifier import (
-    REFUSAL_FALLBACK_BETA,
     SYSTEM_PROMPT,
     Catalog,
     CatalogCategory,
     CatalogTeam,
     Classification,
-    ClassifierError,
     ClaudeClassifier,
     KeywordClassifier,
     TicketText,
     build_classifier,
-    build_request_options,
     render_catalog,
 )
+from app.services.claude import REFUSAL_FALLBACK_BETA, AIError, build_request_options
 
 CATALOG = Catalog(
     categories=(
@@ -186,7 +184,7 @@ def test_claude_classifier_sends_structured_cached_request() -> None:
 def test_claude_classifier_rejects_unusable_responses(response: Any, code: str) -> None:
     classifier = ClaudeClassifier(fake_client(FakeMessages(response)), "claude-opus-5", "low")
 
-    with pytest.raises(ClassifierError) as exc_info:
+    with pytest.raises(AIError) as exc_info:
         classifier.classify(TICKET, CATALOG)
     assert exc_info.value.code == code
 
@@ -212,7 +210,7 @@ def _status_error(cls: type[anthropic.APIStatusError], status: int) -> anthropic
 def test_claude_classifier_maps_sdk_errors(error: Exception, code: str) -> None:
     classifier = ClaudeClassifier(fake_client(FakeMessages(error=error)), "claude-opus-5", "low")
 
-    with pytest.raises(ClassifierError) as exc_info:
+    with pytest.raises(AIError) as exc_info:
         classifier.classify(TICKET, CATALOG)
     assert exc_info.value.code == code
 
