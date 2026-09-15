@@ -1,0 +1,32 @@
+# Render Blueprint for the ResolveAI API (see docs/DEPLOY.md).
+# The Docker image runs `alembic upgrade head` before starting, so deploys migrate themselves.
+services:
+  - type: web
+    name: resolveai-api
+    runtime: docker
+    plan: free
+    region: oregon
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    healthCheckPath: /health
+    envVars:
+      # Connection string of the PostgreSQL database (Neon, Supabase or Render Postgres).
+      # It must have the pgvector extension available. Asked once, when the blueprint is created.
+      - key: DATABASE_URL
+        sync: false
+      # Domains allowed to call the API, as a JSON list, e.g. ["https://resolveai.vercel.app"].
+      - key: CORS_ORIGINS
+        sync: false
+      - key: JWT_SECRET_KEY
+        generateValue: true
+      - key: ENVIRONMENT
+        value: production
+      # AI is optional: without keys the app uses the free local providers.
+      - key: AI_PROVIDER
+        value: keyword
+      - key: EMBEDDING_PROVIDER
+        value: local
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: VOYAGE_API_KEY
+        sync: false

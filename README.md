@@ -10,7 +10,7 @@ Projeto full stack completo: API em **Python/FastAPI** com **PostgreSQL + pgvect
 
 ## Índice
 
-[Demonstração](#demonstração) · [Funcionalidades](#funcionalidades) · [Como a IA funciona](#como-a-ia-funciona) · [Base de conhecimento e RAG](#base-de-conhecimento-e-rag) · [Arquitetura](#arquitetura) · [Stack](#stack) · [Instalação](#instalação) · [Variáveis de ambiente](#variáveis-de-ambiente) · [Testes](#testes) · [API](#api) · [Roadmap](#roadmap)
+[Demonstração](#demonstração) · [Funcionalidades](#funcionalidades) · [Como a IA funciona](#como-a-ia-funciona) · [Base de conhecimento e RAG](#base-de-conhecimento-e-rag) · [Arquitetura](#arquitetura) · [Stack](#stack) · [Instalação](#instalação) · [Deploy](#deploy) · [Variáveis de ambiente](#variáveis-de-ambiente) · [Testes](#testes) · [API](#api) · [Roadmap](#roadmap)
 
 ## Demonstração
 
@@ -205,6 +205,10 @@ VOYAGE_API_KEY=pa-...               # dashboard.voyageai.com
 ```
 
 Depois de trocar o provedor ou o modelo de embeddings, reindexe: `POST /knowledge/reindex` (admin).
+
+### Deploy
+
+Passo a passo em [`docs/DEPLOY.md`](docs/DEPLOY.md), com planos gratuitos: banco no **Neon** (PostgreSQL + pgvector), API no **Render** (Docker, a partir do [`render.yaml`](render.yaml)) e frontend na **Vercel** ([`frontend/vercel.json`](frontend/vercel.json)). O container da API roda as migrations sozinho ao subir.
 
 ## Variáveis de ambiente
 
