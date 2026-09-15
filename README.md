@@ -48,8 +48,9 @@ docker compose up --build
 
 Por padrão a triagem usa um classificador local por palavras-chave (`AI_PROVIDER=keyword`), que é gratuito e não precisa de chave. Para usar o Claude, crie uma chave em https://console.anthropic.com e configure:
 
-- **Rodando local:** em `backend/.env`, defina `AI_PROVIDER=claude` e `ANTHROPIC_API_KEY=sk-ant-...`
-- **Rodando via Docker:** crie um `.env` na raiz do projeto com as mesmas duas variáveis.
+- Em `backend/.env`, defina `AI_PROVIDER=claude` e `ANTHROPIC_API_KEY=sk-ant-...`
+- O mesmo arquivo é usado rodando local e via Docker (`docker compose up -d --build api`).
+- Os créditos da API valem para qualquer modelo; o modelo usado é o de `AI_MODEL` (padrão `claude-haiku-4-5`).
 
 ## Triagem com IA
 
