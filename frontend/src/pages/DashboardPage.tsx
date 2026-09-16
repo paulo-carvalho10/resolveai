@@ -92,7 +92,7 @@ export function DashboardPage() {
 
       <div className="grid gap-4 lg:grid-cols-3">
         <Card title="Chamados por dia" className="lg:col-span-2">
-          <DailyChart data={data.daily} labels={["Abertos", "Resolvidos"]} />
+          <DailyChart data={data.daily} labels={["Criados", "Resolvidos"]} />
         </Card>
 
         <Card title="SLA no período">
