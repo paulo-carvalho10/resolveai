@@ -26,6 +26,7 @@ from app.schemas.ticket import (
     TicketCreate,
     TicketFilters,
     TicketResolve,
+    TicketSelfResolve,
     TicketUpdate,
 )
 from app.services import category_service, team_service, triage_service, user_service
@@ -36,6 +37,7 @@ logger = logging.getLogger(__name__)
 _TICKET_RELATIONS = (
     selectinload(Ticket.requester),
     selectinload(Ticket.assignee),
+    selectinload(Ticket.resolved_by),
     selectinload(Ticket.team),
     selectinload(Ticket.category),
     selectinload(Ticket.subcategory),
@@ -93,6 +95,8 @@ def list_tickets(db: Session, actor: User, filters: TicketFilters) -> tuple[list
         stmt = stmt.where(Ticket.assignee_id.is_(None))
     elif filters.assignee_id is not None:
         stmt = stmt.where(Ticket.assignee_id == filters.assignee_id)
+    if filters.resolved_by_requester:
+        stmt = stmt.where(Ticket.resolved_by_id == Ticket.requester_id)
     if filters.created_from is not None:
         stmt = stmt.where(
             Ticket.created_at >= datetime.combine(filters.created_from, time.min, UTC)
@@ -272,6 +276,28 @@ def resolve_ticket(db: Session, actor: User, ticket_id: int, data: TicketResolve
     return ticket
 
 
+def resolve_by_requester(
+    db: Session, actor: User, ticket_id: int, data: TicketSelfResolve
+) -> Ticket:
+    """The requester solved it without the team. Their account stays on the ticket so the team
+    can review it: record it in the knowledge base, or keep an eye on a workaround."""
+    ticket = get_ticket(db, actor, ticket_id)
+    _ensure_not_closed(ticket)
+    if actor.id != ticket.requester_id:
+        raise PermissionDeniedError("Only the requester can report solving their own ticket.")
+    if ticket.status == TicketStatus.RESOLVED:
+        raise AppError("TICKET_ALREADY_RESOLVED", "The ticket is already resolved.", 409)
+
+    db.add(TicketMessage(ticket=ticket, author=actor, body=data.solution, is_solution=True))
+    record_event(db, ticket, actor, TicketEventType.COMMENT_ADDED, field="solution")
+    _change_status(
+        db, ticket, actor, TicketStatus.RESOLVED, event=TicketEventType.RESOLVED_BY_REQUESTER
+    )
+    db.commit()
+    log_event(logger, "ticket.resolved_by_requester", ticket_id=ticket.id, user_id=actor.id)
+    return ticket
+
+
 def close_ticket(db: Session, actor: User, ticket_id: int) -> Ticket:
     """Close for good. Requesters confirm a solution; the team can also close duplicates."""
     ticket = get_ticket(db, actor, ticket_id)
@@ -357,9 +383,14 @@ def add_message(db: Session, actor: User, ticket_id: int, data: MessageCreate) -
         TicketEventType.COMMENT_ADDED,
         field="internal_note" if data.is_internal else "message",
     )
-    # The requester answered what the agent was waiting for: hand the ticket back to the team.
-    if actor.id == ticket.requester_id and ticket.status == TicketStatus.WAITING_USER:
-        _change_status(db, ticket, actor, TicketStatus.IN_PROGRESS)
+    if actor.id == ticket.requester_id and not data.is_internal:
+        # The requester answered what the agent was waiting for: hand the ticket back.
+        if ticket.status == TicketStatus.WAITING_USER:
+            _change_status(db, ticket, actor, TicketStatus.IN_PROGRESS)
+        # Writing on a resolved ticket means the problem is not gone: back to the queue.
+        elif ticket.status == TicketStatus.RESOLVED:
+            reopened = TicketStatus.IN_PROGRESS if ticket.assignee_id else TicketStatus.OPEN
+            _change_status(db, ticket, actor, reopened)
 
     db.commit()
     log_event(
@@ -387,21 +418,30 @@ def _ensure_not_closed(ticket: Ticket) -> None:
         raise AppError("TICKET_CLOSED", "Closed tickets cannot be changed.", 409)
 
 
-def _change_status(db: Session, ticket: Ticket, actor: User, new_status: TicketStatus) -> None:
+def _change_status(
+    db: Session,
+    ticket: Ticket,
+    actor: User,
+    new_status: TicketStatus,
+    event: TicketEventType | None = None,
+) -> None:
     if new_status == ticket.status:
         return
     old_status = ticket.status
     ticket.status = new_status
     if new_status == TicketStatus.RESOLVED:
         ticket.resolved_at = utcnow()
+        ticket.resolved_by = actor
     elif new_status != TicketStatus.CLOSED:
         ticket.resolved_at = None  # reopened
+        ticket.resolved_by = None
 
-    event = (
-        TicketEventType.RESOLVED
-        if new_status == TicketStatus.RESOLVED
-        else TicketEventType.STATUS_CHANGED
-    )
+    if event is None:
+        event = (
+            TicketEventType.RESOLVED
+            if new_status == TicketStatus.RESOLVED
+            else TicketEventType.STATUS_CHANGED
+        )
     record_event(db, ticket, actor, event, "status", old_status, new_status)
 
 

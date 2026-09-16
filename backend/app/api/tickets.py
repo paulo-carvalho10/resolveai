@@ -26,6 +26,7 @@ from app.schemas.ticket import (
     TicketFilters,
     TicketRead,
     TicketResolve,
+    TicketSelfResolve,
     TicketUpdate,
 )
 from app.services import rag_service, ticket_service, triage_service
@@ -92,6 +93,18 @@ def assign_ticket(ticket_id: int, data: TicketAssign, actor: StaffUser, db: DbSe
 @router.post("/{ticket_id}/resolve", response_model=TicketRead)
 def resolve_ticket(ticket_id: int, data: TicketResolve, actor: StaffUser, db: DbSession) -> Ticket:
     return ticket_service.resolve_ticket(db, actor, ticket_id, data)
+
+
+@router.post("/{ticket_id}/self-resolve", response_model=TicketRead)
+def resolve_by_requester(
+    ticket_id: int, data: TicketSelfResolve, actor: CurrentUser, db: DbSession
+) -> Ticket:
+    """The requester solved the problem without the team and describes how.
+
+    The ticket becomes resolved, and the description is kept as a message flagged
+    `is_solution` for the team to review. If the problem comes back, a reply from the
+    requester reopens the ticket."""
+    return ticket_service.resolve_by_requester(db, actor, ticket_id, data)
 
 
 @router.post("/{ticket_id}/close", response_model=TicketRead)

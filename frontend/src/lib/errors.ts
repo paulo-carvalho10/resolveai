@@ -14,6 +14,7 @@ const MESSAGES: Record<string, string> = {
   TICKET_NOT_FOUND: "Chamado não encontrado.",
   TICKET_CLOSED: "Chamados fechados não podem ser alterados.",
   TICKET_NOT_RESOLVED: "Só é possível fechar o chamado depois que ele for resolvido.",
+  TICKET_ALREADY_RESOLVED: "Este chamado já foi resolvido.",
   INVALID_ASSIGNEE: "Só é possível atribuir o chamado a um atendente ou administrador ativo.",
   SUBCATEGORY_MISMATCH: "A subcategoria não pertence à categoria escolhida.",
   CATEGORY_INACTIVE: "Esta categoria não está mais disponível.",

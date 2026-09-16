@@ -51,6 +51,12 @@ class TicketResolve(BaseModel):
     resolution: MessageBody | None = None
 
 
+class TicketSelfResolve(BaseModel):
+    solution: Annotated[
+        str, StringConstraints(strip_whitespace=True, min_length=10, max_length=20000)
+    ] = Field(description="How the requester solved the problem, for the team to review.")
+
+
 class TicketRead(ORMModel):
     id: int
     title: str
@@ -65,6 +71,7 @@ class TicketRead(ORMModel):
     created_at: datetime
     updated_at: datetime
     resolved_at: datetime | None
+    resolved_by: UserSummary | None
     # Latest AI suggestion. Shown next to the real fields even when it was not applied.
     ai_category: NamedRef | None
     ai_subcategory: NamedRef | None
@@ -105,6 +112,9 @@ class TicketFilters(PageParams):
     assignee_id: int | None = None
     requester_id: int | None = None
     unassigned: bool = False
+    resolved_by_requester: bool = Field(
+        False, description="Only tickets whose requester solved them without the team."
+    )
     created_from: date | None = None
     created_to: date | None = None
     sort: TicketSort = "-created_at"
@@ -121,6 +131,7 @@ class MessageRead(ORMModel):
     author: UserSummary
     body: str
     is_internal: bool
+    is_solution: bool
     created_at: datetime
 
 

@@ -37,6 +37,7 @@ export type Ticket = {
   created_at: string;
   updated_at: string;
   resolved_at: string | null;
+  resolved_by: UserSummary | null;
   ai_category: NamedRef | null;
   ai_subcategory: NamedRef | null;
   ai_team: NamedRef | null;
@@ -56,6 +57,8 @@ export type TicketMessage = {
   author: UserSummary;
   body: string;
   is_internal: boolean;
+  /** The requester's account of how they solved the problem themselves. */
+  is_solution: boolean;
   created_at: string;
 };
 

@@ -443,6 +443,7 @@ def _ticket(
         created_at=created_at,
         updated_at=updated_at,
         resolved_at=resolved_at,
+        resolved_by=assignee if resolved_at else None,
         ai_category=ai_sub.category,
         ai_subcategory=ai_sub.subcategory,
         ai_team=ai_sub.team,

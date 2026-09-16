@@ -46,6 +46,8 @@ class Ticket(TimestampMixin, Base):
         ForeignKey("teams.id", ondelete="SET NULL"), index=True
     )
     resolved_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+    # Who resolved it. Equal to the requester when they solved it without the team.
+    resolved_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
 
     # Latest AI suggestion, kept even when it was not applied, so humans can compare.
     ai_category_id: Mapped[int | None] = mapped_column(
@@ -62,6 +64,7 @@ class Ticket(TimestampMixin, Base):
 
     requester: Mapped["User"] = relationship(foreign_keys=[requester_id])
     assignee: Mapped["User | None"] = relationship(foreign_keys=[assignee_id])
+    resolved_by: Mapped["User | None"] = relationship(foreign_keys=[resolved_by_id])
     team: Mapped["Team | None"] = relationship(foreign_keys=[team_id])
     category: Mapped["Category | None"] = relationship(foreign_keys=[category_id])
     subcategory: Mapped["Subcategory | None"] = relationship(foreign_keys=[subcategory_id])
@@ -91,6 +94,8 @@ class TicketMessage(Base):
     body: Mapped[str] = mapped_column(Text)
     # Internal notes are only visible to agents and admins.
     is_internal: Mapped[bool] = mapped_column(default=False)
+    # The requester's account of how they solved the problem, for the team to review.
+    is_solution: Mapped[bool] = mapped_column(default=False)
     created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow)
 
     ticket: Mapped[Ticket] = relationship(back_populates="messages")

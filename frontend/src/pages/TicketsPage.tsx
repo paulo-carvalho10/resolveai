@@ -12,7 +12,9 @@ import { formatDeadline, formatRelative } from "../lib/format";
 import { SLA_STATUS, TICKET_PRIORITY, TICKET_STATUS } from "../lib/labels";
 import type { Page, Ticket, TicketStatus } from "../lib/types";
 
-const STATUS_FILTERS: { value: TicketStatus | "ACTIVE" | ""; label: string }[] = [
+type StatusFilter = TicketStatus | "ACTIVE" | "RESOLVED_BY_REQUESTER" | "";
+
+const STATUS_FILTERS: { value: StatusFilter; label: string; staffOnly?: boolean }[] = [
   { value: "ACTIVE", label: "Não resolvidos" },
   { value: "", label: "Todos" },
   { value: "OPEN", label: "Abertos" },
@@ -20,13 +22,15 @@ const STATUS_FILTERS: { value: TicketStatus | "ACTIVE" | ""; label: string }[] =
   { value: "WAITING_USER", label: "Aguardando solicitante" },
   { value: "RESOLVED", label: "Resolvidos" },
   { value: "CLOSED", label: "Fechados" },
+  // For the team to review what requesters solved on their own.
+  { value: "RESOLVED_BY_REQUESTER", label: "Resolvidos pelo solicitante", staffOnly: true },
 ];
 
 const ACTIVE_STATUSES: TicketStatus[] = ["OPEN", "IN_PROGRESS", "WAITING_USER"];
 
 export function TicketsPage() {
   const { isStaff } = useAuth();
-  const [status, setStatus] = useState<TicketStatus | "ACTIVE" | "">("ACTIVE");
+  const [status, setStatus] = useState<StatusFilter>("ACTIVE");
   const [priority, setPriority] = useState<string>("");
   const [search, setSearch] = useState("");
   const [query, setQuery] = useState("");
@@ -38,7 +42,13 @@ export function TicketsPage() {
     page_size: pageSize,
     q: query || undefined,
     sort: "-created_at",
-    status: status === "ACTIVE" ? ACTIVE_STATUSES : status ? [status] : undefined,
+    status:
+      status === "ACTIVE"
+        ? ACTIVE_STATUSES
+        : status && status !== "RESOLVED_BY_REQUESTER"
+          ? [status]
+          : undefined,
+    resolved_by_requester: status === "RESOLVED_BY_REQUESTER" || undefined,
     priority: priority ? [priority] : undefined,
   };
 
@@ -90,14 +100,14 @@ export function TicketsPage() {
         <label className="text-sm">
           <span className="mb-1.5 block text-xs text-text-muted">Situação</span>
           <select
-            className="input w-48"
+            className="input w-56"
             value={status}
             onChange={(event) => {
               setPage(1);
-              setStatus(event.target.value as TicketStatus | "ACTIVE" | "");
+              setStatus(event.target.value as StatusFilter);
             }}
           >
-            {STATUS_FILTERS.map((option) => (
+            {STATUS_FILTERS.filter((option) => isStaff || !option.staffOnly).map((option) => (
               <option key={option.label} value={option.value}>
                 {option.label}
               </option>

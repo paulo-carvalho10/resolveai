@@ -42,6 +42,8 @@ Tema escuro: [dashboard](docs/screenshots/dashboard-escuro.png) · [chamado](doc
 - Busca por texto ou `#número`, filtros por situação, prioridade, categoria, equipe, responsável e data
 - **SLA por prioridade** (24h / 8h / 4h / 1h) com prazo, tempo restante e marcação de estouro
 - **Fechamento pelo solicitante ou pela equipe**, e **automático 5 dias depois de resolvido** se ninguém fechar
+- **Solicitante que resolve sozinho** descreve como fez; a solução fica destacada e filtrável para a equipe revisar
+- **Resposta do solicitante reabre** um chamado resolvido e o devolve à fila
 - Histórico completo de auditoria, incluindo o que a automação fez
 
 **Inteligência artificial**
@@ -135,7 +137,7 @@ backend/
 │   │                 # embeddings, rag, answer_generator, sla, analytics
 │   └── scripts/      # seed e gerador de dados de demonstração
 ├── migrations/       # Alembic
-└── tests/            # 197 testes
+└── tests/            # 212 testes
 frontend/
 ├── src/
 │   ├── auth/         # Sessão e refresh de token
@@ -239,8 +241,8 @@ Lista completa e comentada em [`backend/.env.example`](backend/.env.example). As
 ## Testes
 
 ```bash
-cd backend && pytest --cov      # 197 testes
-cd frontend && npm test         # 18 testes
+cd backend && pytest --cov      # 212 testes
+cd frontend && npm test         # 20 testes
 ```
 
 Os testes do backend rodam em **SQLite em memória** por padrão e, com `TEST_DATABASE_URL`, no **PostgreSQL com pgvector** (é assim que o CI roda). Eles cobrem autenticação, permissões, isolamento entre organizações, ciclo de vida do chamado, regras de prioridade, classificação, RAG, SLA, dashboard e os provedores de IA (com clientes falsos, sem gastar API).
@@ -263,6 +265,7 @@ Documentação interativa (Swagger/OpenAPI) em `/docs`.
 | GET · POST | `/tickets` | todos (solicitante vê só os seus) |
 | GET · PATCH · DELETE | `/tickets/{id}` | PATCH: agente/admin · DELETE: admin |
 | POST | `/tickets/{id}/assign` · `/tickets/{id}/resolve` | agente/admin |
+| POST | `/tickets/{id}/self-resolve` | solicitante (o próprio, com a descrição da solução) |
 | POST | `/tickets/{id}/close` | agente/admin (qualquer situação) · solicitante (o próprio, depois de resolvido) |
 | GET · POST | `/tickets/{id}/messages` | todos (notas internas só para agentes) |
 | GET | `/tickets/{id}/history` | agente/admin |

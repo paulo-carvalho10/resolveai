@@ -76,6 +76,11 @@ export function TicketDetailPage() {
       api<Ticket>(`/tickets/${ticketId}/resolve`, { method: "POST", body: { resolution } }),
     onSuccess: refresh,
   });
+  const selfResolve = useMutation({
+    mutationFn: (solution: string) =>
+      api<Ticket>(`/tickets/${ticketId}/self-resolve`, { method: "POST", body: { solution } }),
+    onSuccess: refresh,
+  });
   const close = useMutation({
     mutationFn: () => api<Ticket>(`/tickets/${ticketId}/close`, { method: "POST", body: {} }),
     onSuccess: refresh,
@@ -90,8 +95,11 @@ export function TicketDetailPage() {
 
   const data = ticket.data;
   const closed = data.status === "CLOSED";
+  const isRequester = user?.id === data.requester.id;
+  const active = !closed && data.status !== "RESOLVED";
   const suggestion = suggestions.data?.[0];
-  const actionError = patch.error ?? assign.error ?? resolve.error ?? close.error ?? suggest.error;
+  const actionError =
+    patch.error ?? assign.error ?? resolve.error ?? selfResolve.error ?? close.error ?? suggest.error;
 
   return (
     <>
@@ -148,6 +156,13 @@ export function TicketDetailPage() {
             <p className="text-sm whitespace-pre-wrap text-text">{data.description}</p>
           </Card>
 
+          {isRequester && active && (
+            <SelfResolveCard
+              onSubmit={(solution) => selfResolve.mutate(solution)}
+              busy={selfResolve.isPending}
+            />
+          )}
+
           {data.status === "RESOLVED" && (
             <ResolvedCard
               ticket={data}
@@ -162,7 +177,16 @@ export function TicketDetailPage() {
           <Card title="Conversa">
             {messages.isPending && <Spinner />}
             {messages.data?.length === 0 && (
-              <EmptyState title="Nenhuma mensagem ainda" description="Responda o solicitante abaixo." />
+              <EmptyState
+                title={closed ? "Nenhuma mensagem" : "Nenhuma mensagem ainda"}
+                description={
+                  closed
+                    ? "Este chamado foi fechado sem troca de mensagens."
+                    : isStaff
+                      ? "Responda o solicitante abaixo."
+                      : "Escreva abaixo para falar com a equipe."
+                }
+              />
             )}
             <ul className="space-y-4">
               {messages.data?.map((message) => (
@@ -170,6 +194,12 @@ export function TicketDetailPage() {
                   <div className="mb-1 flex flex-wrap items-center gap-2 text-xs text-text-muted">
                     <span className="font-medium text-text">{message.author.full_name}</span>
                     <span>{formatDateTime(message.created_at)}</span>
+                    {message.is_solution && (
+                      <Badge tone="done">
+                        <CheckCircle2 aria-hidden className="size-3" />
+                        Solução do solicitante
+                      </Badge>
+                    )}
                     {message.is_internal && (
                       <Badge tone="waiting">
                         <Lock aria-hidden className="size-3" />
@@ -181,7 +211,14 @@ export function TicketDetailPage() {
                 </li>
               ))}
             </ul>
-            {!closed && <MessageForm ticketId={ticketId} canWriteInternal={isStaff} onSent={refresh} />}
+            {!closed && (
+              <MessageForm
+                ticketId={ticketId}
+                canWriteInternal={isStaff}
+                reopensTicket={isRequester && data.status === "RESOLVED"}
+                onSent={refresh}
+              />
+            )}
           </Card>
 
           {isStaff && (
@@ -275,6 +312,14 @@ function ResolvedCard({
   onClose: () => void;
   busy: boolean;
 }) {
+  const byRequester = ticket.resolved_by?.id === ticket.requester.id;
+  const summary = isStaff
+    ? byRequester
+      ? "O solicitante resolveu por conta própria. Revise a solução descrita na conversa."
+      : "O solicitante pode confirmar a solução e fechar o chamado."
+    : byRequester
+      ? "Você informou que resolveu por conta própria. A equipe vai revisar a solução."
+      : "Se o problema foi solucionado, você já pode fechar o chamado.";
   return (
     <Card>
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -282,12 +327,11 @@ function ResolvedCard({
           <CheckCircle2 aria-hidden className="mt-0.5 size-5 shrink-0 text-state-done" />
           <div>
             <h2 className="text-sm font-semibold text-text">Chamado resolvido</h2>
+            <p className="mt-1 text-sm text-text">{summary}</p>
             <p className="mt-1 text-sm text-text-muted">
-              {isStaff
-                ? "O solicitante pode confirmar a solução e fechar o chamado."
-                : "Se o problema foi solucionado, você já pode fechar o chamado."}
+              {!isStaff && "Se o problema continuar, responda na conversa e o chamado volta para a equipe. "}
               {ticket.auto_close_at &&
-                ` Se ninguém fechar, ele será fechado automaticamente em ${formatDateTime(ticket.auto_close_at)}.`}
+                `Se ninguém fechar, ele será fechado automaticamente em ${formatDateTime(ticket.auto_close_at)}.`}
             </p>
           </div>
         </div>
@@ -304,6 +348,66 @@ function ResolvedCard({
           Fechar chamado
         </button>
       </div>
+    </Card>
+  );
+}
+
+/** Requesters sometimes fix the problem before anyone answers; how they did it helps the team. */
+function SelfResolveCard({
+  onSubmit,
+  busy,
+}: {
+  onSubmit: (solution: string) => void;
+  busy: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const [solution, setSolution] = useState("");
+  const tooShort = solution.trim().length < 10;
+
+  if (!open) {
+    return (
+      <Card>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <p className="text-sm text-text-muted">Conseguiu resolver sem a ajuda da equipe?</p>
+          <button className="btn-secondary" onClick={() => setOpen(true)}>
+            <CheckCircle2 aria-hidden className="size-4" />
+            Resolvi por conta própria
+          </button>
+        </div>
+      </Card>
+    );
+  }
+
+  return (
+    <Card title="Como você resolveu?">
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (!tooShort) onSubmit(solution.trim());
+        }}
+      >
+        <p className="mb-3 text-sm text-text-muted">
+          Conte o que você fez. A equipe revisa a solução, e ela pode ajudar outras pessoas com o
+          mesmo problema.
+        </p>
+        <textarea
+          className="input min-h-24"
+          aria-label="Como você resolveu"
+          placeholder="Ex.: reiniciei o serviço de impressão e o cupom voltou a sair."
+          value={solution}
+          onChange={(event) => setSolution(event.target.value)}
+        />
+        <p className="mt-1 text-xs text-text-muted">Mínimo de 10 caracteres.</p>
+        <div className="mt-3 flex flex-wrap justify-end gap-2">
+          <button type="button" className="btn-secondary" onClick={() => setOpen(false)} disabled={busy}>
+            Cancelar
+          </button>
+          <button type="submit" className="btn-primary" disabled={busy || tooShort}>
+            <CheckCircle2 aria-hidden className="size-4" />
+            Marcar como resolvido
+          </button>
+        </div>
+      </form>
     </Card>
   );
 }
@@ -573,10 +677,13 @@ function TriagePanel({
 function MessageForm({
   ticketId,
   canWriteInternal,
+  reopensTicket,
   onSent,
 }: {
   ticketId: number;
   canWriteInternal: boolean;
+  /** The requester is writing on a resolved ticket: sending puts it back in the queue. */
+  reopensTicket: boolean;
   onSent: () => void;
 }) {
   const queryClient = useQueryClient();
@@ -625,6 +732,8 @@ function MessageForm({
             />
             Nota interna (não visível ao solicitante)
           </label>
+        ) : reopensTicket ? (
+          <span className="text-xs text-text-muted">Ao enviar, o chamado volta para a equipe.</span>
         ) : (
           <span />
         )}
