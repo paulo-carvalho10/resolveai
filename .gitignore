@@ -8,8 +8,9 @@ __pycache__/
 coverage.xml
 htmlcov/
 
-# Env
+# Env (also .env.production, .env.neon and friends)
 .env
+.env.*
 !.env.example
 
 # Node
