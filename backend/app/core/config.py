@@ -38,6 +38,12 @@ class Settings(BaseSettings):
     # A ticket is "at risk" when less than this share of its SLA window is left.
     sla_at_risk_ratio: float = Field(0.25, gt=0, lt=1)
 
+    # --- Ticket lifecycle ---
+    # A resolved ticket that nobody closes is closed by the system after this many days.
+    auto_close_resolved_days: int = Field(5, ge=1)
+    # How often the running API looks for tickets to close. 0 turns the job off.
+    auto_close_interval_minutes: float = Field(60, ge=0)
+
     # --- Dashboard estimates ---
     # Minutes a person would spend on work the automation did. Shown as an estimate.
     minutes_saved_per_applied_triage: float = 3

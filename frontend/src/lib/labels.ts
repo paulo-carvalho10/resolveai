@@ -52,6 +52,7 @@ export const EVENT_LABEL = {
   ASSIGNEE_CHANGED: "Responsável alterado",
   COMMENT_ADDED: "Comentário adicionado",
   RESOLVED: "Chamado resolvido",
+  AUTO_CLOSED: "Fechado automaticamente",
   RULE_APPLIED: "Regra de prioridade aplicada",
   AI_ANALYZED: "IA analisou o chamado",
   AI_ANALYSIS_FAILED: "Falha na análise da IA",

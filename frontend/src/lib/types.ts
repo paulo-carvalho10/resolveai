@@ -46,6 +46,8 @@ export type Ticket = {
   ai_analyzed_at: string | null;
   sla_due_at: string;
   sla_status: SlaStatus;
+  /** When the system closes the ticket if nobody does. Only while resolved. */
+  auto_close_at: string | null;
 };
 
 export type TicketMessage = {

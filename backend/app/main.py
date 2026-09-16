@@ -14,6 +14,7 @@ from app.api import (
 from app.core.config import get_settings
 from app.core.errors import register_exception_handlers
 from app.core.logger import RequestLoggingMiddleware, configure_logging
+from app.jobs import lifespan
 
 DESCRIPTION = """
 AI-powered service desk that automatically classifies, prioritizes and routes support
@@ -27,7 +28,9 @@ def create_app() -> FastAPI:
     settings = get_settings()
     configure_logging(settings.log_level)
 
-    app = FastAPI(title="ResolveAI API", version="0.3.0", description=DESCRIPTION)
+    app = FastAPI(
+        title="ResolveAI API", version="0.3.0", description=DESCRIPTION, lifespan=lifespan
+    )
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,

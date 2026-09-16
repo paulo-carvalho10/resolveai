@@ -16,6 +16,7 @@ from datetime import datetime, timedelta
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.core.config import get_settings
 from app.core.database import SessionLocal
 from app.core.security import hash_password
 from app.core.text import normalize
@@ -402,12 +403,18 @@ def _ticket(
     else:
         resolved_at = None
 
+    # Closing follows the API's rule: some requesters confirm the solution within two days,
+    # and whatever is still resolved after the auto-close window is closed by the system.
+    closed_at: datetime | None = None
+    closed_by_requester = False
     if resolved_at is not None:
-        status = (
-            TicketStatus.CLOSED
-            if age > timedelta(days=7) and rng.random() < 0.6
-            else TicketStatus.RESOLVED
-        )
+        auto_close_at = resolved_at + timedelta(days=get_settings().auto_close_resolved_days)
+        requester_close_at = resolved_at + timedelta(days=rng.uniform(0.02, 2))
+        if rng.random() < 0.4 and requester_close_at <= now:
+            closed_at, closed_by_requester = requester_close_at, True
+        elif auto_close_at <= now:
+            closed_at = auto_close_at
+        status = TicketStatus.CLOSED if closed_at else TicketStatus.RESOLVED
     else:
         status = rng.choices(
             [TicketStatus.OPEN, TicketStatus.IN_PROGRESS, TicketStatus.WAITING_USER],
@@ -420,7 +427,7 @@ def _ticket(
     ai_sub = sub if ai_correct else rng.choice([s for s in all_subs if s is not sub] or [sub])
     ai_priority = priority if rng.random() < 0.8 else rng.choice(list(TicketPriority))
     confidence = round(rng.uniform(0.72, 0.98) if ai_correct else rng.uniform(0.45, 0.8), 2)
-    updated_at = resolved_at or (first_response if assignee else created_at)
+    updated_at = closed_at or resolved_at or (first_response if assignee else created_at)
 
     ticket = Ticket(
         organization_id=org_id,
@@ -500,6 +507,21 @@ def _ticket(
                 field="status",
                 new_value="RESOLVED",
                 created_at=resolved_at,
+            )
+        )
+    if closed_at is not None:
+        ticket.history.append(
+            TicketHistory(
+                actor=requester if closed_by_requester else None,
+                event_type=(
+                    TicketEventType.STATUS_CHANGED
+                    if closed_by_requester
+                    else TicketEventType.AUTO_CLOSED
+                ),
+                field="status",
+                old_value="RESOLVED",
+                new_value="CLOSED",
+                created_at=closed_at,
             )
         )
 

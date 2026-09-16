@@ -13,6 +13,8 @@ os.environ["JWT_SECRET_KEY"] = "test-secret-key-that-is-long-enough-for-hs256-si
 os.environ["DATABASE_URL"] = "sqlite+pysqlite:///:memory:"
 os.environ["AI_PROVIDER"] = "keyword"
 os.environ["EMBEDDING_PROVIDER"] = "local"
+# The auto-close job would close tickets a test just created; tests that need it turn it on.
+os.environ["AUTO_CLOSE_INTERVAL_MINUTES"] = "0"
 os.environ.pop("ANTHROPIC_API_KEY", None)
 os.environ.pop("VOYAGE_API_KEY", None)
 

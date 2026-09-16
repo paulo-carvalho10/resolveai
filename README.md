@@ -41,6 +41,7 @@ Tema escuro: [dashboard](docs/screenshots/dashboard-escuro.png) · [chamado](doc
 - Triagem: status, prioridade, categoria, equipe e responsável
 - Busca por texto ou `#número`, filtros por situação, prioridade, categoria, equipe, responsável e data
 - **SLA por prioridade** (24h / 8h / 4h / 1h) com prazo, tempo restante e marcação de estouro
+- **Fechamento pelo solicitante ou pela equipe**, e **automático 5 dias depois de resolvido** se ninguém fechar
 - Histórico completo de auditoria, incluindo o que a automação fez
 
 **Inteligência artificial**
@@ -134,7 +135,7 @@ backend/
 │   │                 # embeddings, rag, answer_generator, sla, analytics
 │   └── scripts/      # seed e gerador de dados de demonstração
 ├── migrations/       # Alembic
-└── tests/            # 184 testes
+└── tests/            # 197 testes
 frontend/
 ├── src/
 │   ├── auth/         # Sessão e refresh de token
@@ -153,6 +154,7 @@ frontend/
 - **Logs estruturados:** `2026-09-14T14:35:12+00:00 INFO ticket.created ticket_id=527 user_id=42`.
 - **Coluna vetorial portátil:** `vector` no PostgreSQL e JSON no SQLite, então a suíte roda nos dois bancos.
 - **Análises em segundo plano** com BackgroundTasks do FastAPI (Redis e Celery ficam para a versão 2).
+- **Fechamento automático que tolera hibernação:** o job roda dentro da API ao iniciar (antes da primeira requisição) e a cada hora, fechando tudo que venceu. Como o plano gratuito do Render dorme, cada execução recupera o atraso em vez de depender de horário. `SKIP LOCKED` evita que duas instâncias fechem o mesmo chamado.
 
 ## Stack
 
@@ -232,12 +234,13 @@ Lista completa e comentada em [`backend/.env.example`](backend/.env.example). As
 | `EMBEDDING_PROVIDER` | `local` | `local` (grátis) ou `voyage` |
 | `RAG_TOP_K` / `RAG_MIN_SCORE` | `3` / por provedor | artigos enviados à IA e similaridade mínima |
 | `SLA_HOURS_*` | 24 / 8 / 4 / 1 | prazo por prioridade |
+| `AUTO_CLOSE_RESOLVED_DAYS` | `5` | dias em Resolvido até o sistema fechar o chamado |
 
 ## Testes
 
 ```bash
-cd backend && pytest --cov      # 184 testes
-cd frontend && npm test         # 15 testes
+cd backend && pytest --cov      # 197 testes
+cd frontend && npm test         # 18 testes
 ```
 
 Os testes do backend rodam em **SQLite em memória** por padrão e, com `TEST_DATABASE_URL`, no **PostgreSQL com pgvector** (é assim que o CI roda). Eles cobrem autenticação, permissões, isolamento entre organizações, ciclo de vida do chamado, regras de prioridade, classificação, RAG, SLA, dashboard e os provedores de IA (com clientes falsos, sem gastar API).
@@ -260,6 +263,7 @@ Documentação interativa (Swagger/OpenAPI) em `/docs`.
 | GET · POST | `/tickets` | todos (solicitante vê só os seus) |
 | GET · PATCH · DELETE | `/tickets/{id}` | PATCH: agente/admin · DELETE: admin |
 | POST | `/tickets/{id}/assign` · `/tickets/{id}/resolve` | agente/admin |
+| POST | `/tickets/{id}/close` | agente/admin (qualquer situação) · solicitante (o próprio, depois de resolvido) |
 | GET · POST | `/tickets/{id}/messages` | todos (notas internas só para agentes) |
 | GET | `/tickets/{id}/history` | agente/admin |
 | POST · GET | `/tickets/{id}/ai/analyze` · `/tickets/{id}/ai/analyses` | agente/admin |

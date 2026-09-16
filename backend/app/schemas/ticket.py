@@ -1,8 +1,9 @@
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, computed_field
 
+from app.core.config import get_settings
 from app.models.enums import TicketEventType, TicketPriority, TicketStatus
 from app.schemas.common import NamedRef, ORMModel, PageParams
 from app.schemas.user import UserSummary
@@ -82,6 +83,14 @@ class TicketRead(ORMModel):
     @property
     def sla_status(self) -> sla.SlaStatus:
         return sla.status(self.priority, self.status, self.created_at, self.resolved_at)
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def auto_close_at(self) -> datetime | None:
+        """When the system will close this ticket if nobody does. Only while resolved."""
+        if self.status != TicketStatus.RESOLVED or self.resolved_at is None:
+            return None
+        return self.resolved_at + timedelta(days=get_settings().auto_close_resolved_days)
 
 
 class TicketFilters(PageParams):

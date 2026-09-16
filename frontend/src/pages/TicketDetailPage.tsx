@@ -76,6 +76,10 @@ export function TicketDetailPage() {
       api<Ticket>(`/tickets/${ticketId}/resolve`, { method: "POST", body: { resolution } }),
     onSuccess: refresh,
   });
+  const close = useMutation({
+    mutationFn: () => api<Ticket>(`/tickets/${ticketId}/close`, { method: "POST", body: {} }),
+    onSuccess: refresh,
+  });
   const suggest = useMutation({
     mutationFn: () => api<Suggestion>(`/tickets/${ticketId}/ai/suggest`, { method: "POST", body: {} }),
     onSuccess: refresh,
@@ -87,7 +91,7 @@ export function TicketDetailPage() {
   const data = ticket.data;
   const closed = data.status === "CLOSED";
   const suggestion = suggestions.data?.[0];
-  const actionError = patch.error ?? assign.error ?? resolve.error ?? suggest.error;
+  const actionError = patch.error ?? assign.error ?? resolve.error ?? close.error ?? suggest.error;
 
   return (
     <>
@@ -143,6 +147,15 @@ export function TicketDetailPage() {
             </div>
             <p className="text-sm whitespace-pre-wrap text-text">{data.description}</p>
           </Card>
+
+          {data.status === "RESOLVED" && (
+            <ResolvedCard
+              ticket={data}
+              isStaff={isStaff}
+              onClose={() => close.mutate()}
+              busy={close.isPending}
+            />
+          )}
 
           {isStaff && suggestion && <SuggestionCard suggestion={suggestion} />}
 
@@ -247,6 +260,51 @@ function Detail({ label, value }: { label: string; value: string }) {
       <dt className="text-text-muted">{label}</dt>
       <dd className="text-right font-medium text-text">{value}</dd>
     </div>
+  );
+}
+
+/** Resolved is not the end: the requester confirms by closing, or the system closes it later. */
+function ResolvedCard({
+  ticket,
+  isStaff,
+  onClose,
+  busy,
+}: {
+  ticket: Ticket;
+  isStaff: boolean;
+  onClose: () => void;
+  busy: boolean;
+}) {
+  return (
+    <Card>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="flex gap-3">
+          <CheckCircle2 aria-hidden className="mt-0.5 size-5 shrink-0 text-state-done" />
+          <div>
+            <h2 className="text-sm font-semibold text-text">Chamado resolvido</h2>
+            <p className="mt-1 text-sm text-text-muted">
+              {isStaff
+                ? "O solicitante pode confirmar a solução e fechar o chamado."
+                : "Se o problema foi solucionado, você já pode fechar o chamado."}
+              {ticket.auto_close_at &&
+                ` Se ninguém fechar, ele será fechado automaticamente em ${formatDateTime(ticket.auto_close_at)}.`}
+            </p>
+          </div>
+        </div>
+        <button
+          className="btn-primary"
+          disabled={busy}
+          onClick={() => {
+            if (confirm("Fechar o chamado? Depois de fechado, ele não recebe mais mensagens nem alterações.")) {
+              onClose();
+            }
+          }}
+        >
+          <Lock aria-hidden className="size-4" />
+          Fechar chamado
+        </button>
+      </div>
+    </Card>
   );
 }
 

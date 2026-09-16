@@ -13,6 +13,7 @@ const MESSAGES: Record<string, string> = {
   CANNOT_MODIFY_SELF: "Você não pode alterar o próprio papel nem se desativar.",
   TICKET_NOT_FOUND: "Chamado não encontrado.",
   TICKET_CLOSED: "Chamados fechados não podem ser alterados.",
+  TICKET_NOT_RESOLVED: "Só é possível fechar o chamado depois que ele for resolvido.",
   INVALID_ASSIGNEE: "Só é possível atribuir o chamado a um atendente ou administrador ativo.",
   SUBCATEGORY_MISMATCH: "A subcategoria não pertence à categoria escolhida.",
   CATEGORY_INACTIVE: "Esta categoria não está mais disponível.",

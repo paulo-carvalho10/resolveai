@@ -94,6 +94,16 @@ def resolve_ticket(ticket_id: int, data: TicketResolve, actor: StaffUser, db: Db
     return ticket_service.resolve_ticket(db, actor, ticket_id, data)
 
 
+@router.post("/{ticket_id}/close", response_model=TicketRead)
+def close_ticket(ticket_id: int, actor: CurrentUser, db: DbSession) -> Ticket:
+    """Close for good: the ticket stops accepting changes and messages.
+
+    Requesters can close their own tickets once resolved; agents and admins can close any
+    ticket. Resolved tickets nobody closes are closed automatically after
+    `AUTO_CLOSE_RESOLVED_DAYS`."""
+    return ticket_service.close_ticket(db, actor, ticket_id)
+
+
 @router.get("/{ticket_id}/messages", response_model=list[MessageRead])
 def list_messages(ticket_id: int, actor: CurrentUser, db: DbSession) -> list[TicketMessage]:
     """Internal notes are hidden from requesters."""

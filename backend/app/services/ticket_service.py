@@ -3,9 +3,10 @@
 import logging
 from datetime import UTC, datetime, time, timedelta
 
-from sqlalchemy import case, func, or_, select
+from sqlalchemy import case, func, insert, or_, select, update
 from sqlalchemy.orm import Session, selectinload
 
+from app.core.config import get_settings
 from app.core.errors import AppError, NotFoundError, PermissionDeniedError
 from app.core.logger import log_event
 from app.models import (
@@ -269,6 +270,73 @@ def resolve_ticket(db: Session, actor: User, ticket_id: int, data: TicketResolve
     db.commit()
     log_event(logger, "ticket.resolved", ticket_id=ticket.id, user_id=actor.id)
     return ticket
+
+
+def close_ticket(db: Session, actor: User, ticket_id: int) -> Ticket:
+    """Close for good. Requesters confirm a solution; the team can also close duplicates."""
+    ticket = get_ticket(db, actor, ticket_id)
+    _ensure_not_closed(ticket)
+    if not actor.is_staff and ticket.status != TicketStatus.RESOLVED:
+        raise AppError(
+            "TICKET_NOT_RESOLVED", "Requesters can only close tickets that were resolved.", 409
+        )
+    _change_status(db, ticket, actor, TicketStatus.CLOSED)
+    db.commit()
+    log_event(logger, "ticket.closed", ticket_id=ticket.id, user_id=actor.id)
+    return ticket
+
+
+AUTO_CLOSE_BATCH_SIZE = 500
+
+
+def close_stale_resolved_tickets(db: Session, now: datetime | None = None) -> int:
+    """Close tickets resolved longer than `auto_close_resolved_days` ago. Returns the count.
+
+    Every run catches up on everything overdue, so it does not matter how long the API was
+    asleep. Rows are locked with SKIP LOCKED: two instances running the job at once never
+    close (and log) the same ticket twice.
+    """
+    now = now or utcnow()
+    cutoff = now - timedelta(days=get_settings().auto_close_resolved_days)
+    closed = 0
+    while True:
+        ids = list(
+            db.scalars(
+                select(Ticket.id)
+                .where(Ticket.status == TicketStatus.RESOLVED, Ticket.resolved_at <= cutoff)
+                .order_by(Ticket.id)
+                .limit(AUTO_CLOSE_BATCH_SIZE)
+                .with_for_update(skip_locked=True)
+            )
+        )
+        if not ids:
+            break
+        db.execute(
+            update(Ticket)
+            .where(Ticket.id.in_(ids))
+            .values(status=TicketStatus.CLOSED, updated_at=now)
+            .execution_options(synchronize_session=False)
+        )
+        db.execute(
+            insert(TicketHistory),
+            [
+                {
+                    "ticket_id": ticket_id,
+                    "actor_id": None,
+                    "event_type": TicketEventType.AUTO_CLOSED,
+                    "field": "status",
+                    "old_value": TicketStatus.RESOLVED.value,
+                    "new_value": TicketStatus.CLOSED.value,
+                    "created_at": now,
+                }
+                for ticket_id in ids
+            ],
+        )
+        db.commit()
+        closed += len(ids)
+    if closed:
+        log_event(logger, "ticket.auto_closed", count=closed)
+    return closed
 
 
 def add_message(db: Session, actor: User, ticket_id: int, data: MessageCreate) -> TicketMessage:
