@@ -12,7 +12,8 @@ async function login(email) {
   await page.getByLabel("E-mail").fill(email);
   await page.getByLabel("Senha").fill("resolveai123");
   await page.getByRole("button", { name: "Entrar" }).click();
-  await page.waitForSelector("nav");
+  // Hosted on a free tier, login (Argon2) can take a few seconds.
+  await page.waitForSelector("nav", { timeout: 60000 });
 }
 
 // Requester opens a ticket through the UI.
@@ -36,9 +37,17 @@ console.log("vê histórico?", await page.getByText("Histórico").isVisible().ca
 await page.getByRole("button", { name: "Sair" }).click();
 await login("agent@resolveai.dev");
 await page.goto(ticketUrl);
-await page.waitForTimeout(1500);
+// Wait for the ticket itself before asking which panels are on screen.
+await page.getByRole("heading", { level: 1 }).waitFor({ timeout: 60000 });
+await page.getByText("Detalhes").first().waitFor({ timeout: 60000 });
 for (const label of ["Análise da IA", "Sugestão da base de conhecimento", "Triagem", "Histórico"]) {
-  console.log(`agente vê "${label}":`, await page.getByText(label).first().isVisible());
+  const visible = await page
+    .getByText(label)
+    .first()
+    .waitFor({ timeout: 30000 })
+    .then(() => true)
+    .catch(() => false);
+  console.log(`agente vê "${label}":`, visible);
 }
 console.log("sugestão:", (await page.locator("text=Fontes utilizadas").count()) > 0 ? "com fontes" : "sem fontes");
 console.log("erros de console:", errors.length ? errors : "nenhum");

@@ -6,6 +6,14 @@
 
 Projeto full stack completo: API em **Python/FastAPI** com **PostgreSQL + pgvector**, frontend em **React + TypeScript**, IA com **Claude** e busca semântica com **embeddings + RAG**. Roda inteiro com `docker compose up`.
 
+### 🔗 Demonstração ao vivo
+
+**Aplicação:** https://resolveai-silk.vercel.app · **API e documentação:** https://resolveai-api-wb7q.onrender.com/docs
+
+Entre com `admin@resolveai.dev` / `resolveai123` (ou `agent@` para a visão de atendente e `user@` para a de solicitante). A base tem 5.000 chamados de demonstração.
+
+> A API roda no plano gratuito do Render e **hiberna quando fica sem uso**: a primeira chamada pode levar até um minuto para responder. Depois disso fica rápida.
+
 ![Dashboard](docs/screenshots/dashboard.png)
 
 ## Índice
