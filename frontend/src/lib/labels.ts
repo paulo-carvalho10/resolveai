@@ -79,6 +79,13 @@ export function translateEvent(event: keyof typeof EVENT_LABEL): string {
 /** History and automatic changes store enum values; show them in Portuguese. */
 export function translateValue(value: string | null): string | null {
   if (!value) return value;
+  // Composite values, like an AI analysis ("Fiscal · HIGH · 70%"), are translated part by part.
+  if (value.includes(" · ")) {
+    return value
+      .split(" · ")
+      .map((part) => translateValue(part))
+      .join(" · ");
+  }
   const status = TICKET_STATUS[value as keyof typeof TICKET_STATUS];
   if (status) return status.label;
   const priority = TICKET_PRIORITY[value as keyof typeof TICKET_PRIORITY];

@@ -18,13 +18,17 @@ Entre com `admin@resolveai.dev` / `resolveai123` (ou `agent@` para a visão de a
 
 ## Índice
 
-[Demonstração](#demonstração) · [Funcionalidades](#funcionalidades) · [Como a IA funciona](#como-a-ia-funciona) · [Base de conhecimento e RAG](#base-de-conhecimento-e-rag) · [Arquitetura](#arquitetura) · [Stack](#stack) · [Instalação](#instalação) · [Deploy](#deploy) · [Variáveis de ambiente](#variáveis-de-ambiente) · [Testes](#testes) · [API](#api) · [Roadmap](#roadmap)
+[Demonstração](#demonstração) · [Funcionalidades](#funcionalidades) · [Ciclo de vida do chamado](#ciclo-de-vida-do-chamado) · [Como a IA funciona](#como-a-ia-funciona) · [Base de conhecimento e RAG](#base-de-conhecimento-e-rag) · [Arquitetura](#arquitetura) · [Stack](#stack) · [Instalação](#instalação) · [Deploy](#deploy) · [Variáveis de ambiente](#variáveis-de-ambiente) · [Testes](#testes) · [API](#api) · [Roadmap](#roadmap)
 
 ## Demonstração
 
 | Chamados | Detalhe do chamado |
 | --- | --- |
 | ![Lista de chamados](docs/screenshots/chamados.png) | ![Detalhe do chamado](docs/screenshots/chamado-detalhe.png) |
+
+| Solicitante que resolveu sozinho | Equipe revisando a solução |
+| --- | --- |
+| ![Solicitante descreve como resolveu](docs/screenshots/resolvido-pelo-solicitante.png) | ![Equipe revisa a solução do solicitante](docs/screenshots/revisao-da-equipe.png) |
 
 | Base de conhecimento | Administração |
 | --- | --- |
@@ -41,9 +45,7 @@ Tema escuro: [dashboard](docs/screenshots/dashboard-escuro.png) · [chamado](doc
 - Triagem: status, prioridade, categoria, equipe e responsável
 - Busca por texto ou `#número`, filtros por situação, prioridade, categoria, equipe, responsável e data
 - **SLA por prioridade** (24h / 8h / 4h / 1h) com prazo, tempo restante e marcação de estouro
-- **Fechamento pelo solicitante ou pela equipe**, e **automático 5 dias depois de resolvido** se ninguém fechar
-- **Solicitante que resolve sozinho** descreve como fez; a solução fica destacada e filtrável para a equipe revisar
-- **Resposta do solicitante reabre** um chamado resolvido e o devolve à fila
+- **Ciclo de vida completo:** o solicitante pode resolver sozinho (descrevendo como) ou confirmar e fechar, a resposta dele reabre um chamado resolvido, e o sistema fecha 5 dias depois de resolvido ([detalhes](#ciclo-de-vida-do-chamado))
 - Histórico completo de auditoria, incluindo o que a automação fez
 
 **Inteligência artificial**
@@ -67,6 +69,42 @@ Tema escuro: [dashboard](docs/screenshots/dashboard-escuro.png) · [chamado](doc
 - Tempo médio de primeira resposta e de resolução, taxa de resolução
 - Chamados por dia, categoria, prioridade e equipe
 - Métricas da IA: aceitação da categoria e da prioridade, confiança média, artigos mais citados
+
+## Ciclo de vida do chamado
+
+```
+Solicitante abre o chamado
+        │
+        ▼
+     ABERTO ──────────► EM ANDAMENTO ◄────────► AGUARDANDO SOLICITANTE
+        │                    │           resposta do solicitante devolve
+        │                    │
+        ├── equipe resolve ──┤
+        └── solicitante resolve sozinho, descrevendo como
+                             │
+                             ▼
+                        RESOLVIDO ──── resposta do solicitante ────► volta para a fila
+                             │
+      solicitante confirma, equipe fecha ou 5 dias sem ninguém fechar
+                             │
+                             ▼
+                         FECHADO   (definitivo: não aceita alterações nem mensagens)
+```
+
+| Situação | Significa |
+| --- | --- |
+| **Aberto** | Chegou e ninguém começou a trabalhar nele |
+| **Em andamento** | Um atendente está trabalhando nele |
+| **Aguardando solicitante** | O atendente perguntou algo; a resposta do solicitante devolve o chamado para Em andamento |
+| **Resolvido** | Problema solucionado: o SLA para de contar e o chamado fecha sozinho em 5 dias |
+| **Fechado** | Arquivado de vez |
+
+No filtro da lista, **Não resolvidos** reúne Aberto, Em andamento e Aguardando solicitante.
+
+- **Quem fecha:** o solicitante, depois que o chamado foi resolvido; a equipe, em qualquer situação (duplicados, por exemplo); ou o sistema, 5 dias depois de resolvido (`AUTO_CLOSE_RESOLVED_DAYS`).
+- **Solicitante que resolve sozinho** precisa contar como fez. O chamado vai para **Resolvido, e não Fechado**, para a equipe poder revisar: registrar a solução na base de conhecimento, ou reabrir e acompanhar se foi uma gambiarra. A descrição aparece na conversa com a etiqueta *Solução do solicitante*, e a equipe encontra esses chamados no filtro **Resolvidos pelo solicitante**.
+- **Resposta do solicitante reabre** um chamado resolvido: ele volta para Em andamento se tem responsável, ou para Aberto se não tem. Mensagens e notas internas da equipe não reabrem.
+- **Tudo fica no histórico**, inclusive quem resolveu e o fechamento automático, registrado como *Sistema*.
 
 ## Como a IA funciona
 
@@ -135,7 +173,8 @@ backend/
 │   ├── schemas/      # Contratos Pydantic
 │   ├── services/     # triage, ai_classifier, priority, routing, knowledge,
 │   │                 # embeddings, rag, answer_generator, sla, analytics
-│   └── scripts/      # seed e gerador de dados de demonstração
+│   ├── scripts/      # seed e gerador de dados de demonstração
+│   └── jobs.py       # tarefas periódicas (fechamento automático)
 ├── migrations/       # Alembic
 └── tests/            # 212 testes
 frontend/
@@ -242,10 +281,10 @@ Lista completa e comentada em [`backend/.env.example`](backend/.env.example). As
 
 ```bash
 cd backend && pytest --cov      # 212 testes
-cd frontend && npm test         # 20 testes
+cd frontend && npm test         # 23 testes
 ```
 
-Os testes do backend rodam em **SQLite em memória** por padrão e, com `TEST_DATABASE_URL`, no **PostgreSQL com pgvector** (é assim que o CI roda). Eles cobrem autenticação, permissões, isolamento entre organizações, ciclo de vida do chamado, regras de prioridade, classificação, RAG, SLA, dashboard e os provedores de IA (com clientes falsos, sem gastar API).
+Os testes do backend rodam em **SQLite em memória** por padrão e, com `TEST_DATABASE_URL`, no **PostgreSQL com pgvector** (é assim que o CI roda). Eles cobrem autenticação, permissões, isolamento entre organizações, ciclo de vida do chamado (incluindo fechamento automático e reabertura), regras de prioridade, classificação, RAG, SLA, dashboard e os provedores de IA (com clientes falsos, sem gastar API).
 
 O CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) roda lint, testes no PostgreSQL, verificação de que as migrations batem com os modelos, lint + tipos + testes + build do frontend, e o build das imagens Docker.
 
