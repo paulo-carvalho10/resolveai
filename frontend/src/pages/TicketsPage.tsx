@@ -13,7 +13,7 @@ import { SLA_STATUS, TICKET_PRIORITY, TICKET_STATUS } from "../lib/labels";
 import type { Page, Ticket, TicketStatus } from "../lib/types";
 
 const STATUS_FILTERS: { value: TicketStatus | "ACTIVE" | ""; label: string }[] = [
-  { value: "ACTIVE", label: "Em aberto" },
+  { value: "ACTIVE", label: "Não resolvidos" },
   { value: "", label: "Todos" },
   { value: "OPEN", label: "Abertos" },
   { value: "IN_PROGRESS", label: "Em andamento" },

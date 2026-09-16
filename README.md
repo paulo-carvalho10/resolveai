@@ -60,7 +60,7 @@ Tema escuro: [dashboard](docs/screenshots/dashboard-escuro.png) · [chamado](doc
 - Autenticação JWT com refresh e senhas em Argon2
 
 **Dashboard**
-- Fila atual, críticos em aberto, resolvidos hoje, SLA em risco e estourado
+- Não resolvidos, críticos não resolvidos, resolvidos hoje, SLA em risco e prazo estourado
 - Tempo médio de primeira resposta e de resolução, taxa de resolução
 - Chamados por dia, categoria, prioridade e equipe
 - Métricas da IA: aceitação da categoria e da prioridade, confiança média, artigos mais citados

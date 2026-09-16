@@ -65,13 +65,13 @@ export function DashboardPage() {
       <div className="mb-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <Stat
           icon={<Inbox className="size-4" />}
-          label="Em aberto"
+          label="Não resolvidos"
           value={formatNumber(indicators.open + indicators.in_progress + indicators.waiting_user)}
           hint={`${formatNumber(indicators.open)} novos · ${formatNumber(indicators.in_progress)} em andamento`}
         />
         <Stat
           icon={<AlertTriangle className="size-4" />}
-          label="Críticos em aberto"
+          label="Críticos não resolvidos"
           value={formatNumber(indicators.critical_open)}
           hint={`${formatNumber(indicators.sla_at_risk)} com SLA em risco`}
           tone={indicators.critical_open > 0 ? "danger" : undefined}
@@ -104,7 +104,7 @@ export function DashboardPage() {
           />
           <dl className="mt-5 space-y-2 border-t border-border pt-4 text-sm">
             <Row label="Taxa de resolução" value={formatPercent(period.resolution_rate)} />
-            <Row label="SLA estourado em aberto" value={formatNumber(indicators.sla_breached_open)} />
+            <Row label="Prazo estourado agora" value={formatNumber(indicators.sla_breached_open)} />
             <Row label="Aguardando solicitante" value={formatNumber(indicators.waiting_user)} />
           </dl>
         </Card>
